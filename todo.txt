@@ -1,0 +1,7 @@
+heater_control todo
+===================
+
+- Realtime clock.
+- Embedded interpreter, possibly LUA for control logic.
+- io states to IoT.
+- Message buffer for non-sent data (lan functions temporary nonfunctional).
