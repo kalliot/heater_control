@@ -9,11 +9,10 @@ Getting Started
 1. Get an Arduno board, I have [Mega] (http://arduino.cc/en/Main/arduinoBoardMega2560), but [Uno] (http://arduino.cc/en/Main/arduinoBoardUno) is also ok.
 2. Get an Arduino [Ethernet] (http://arduino.cc/en/Main/ArduinoEthernetShield) or [WiFi] (http://arduino.cc/en/Main/ArduinoWiFiShield) shield to get connected to M2X.
 3. Get [arduino dev environment] (http://arduino.cc/en/guide/Environment).
-4. Create account for [AT&T's M2X] (https://m2x.att.com/developer/get-starthttps://m2x.att.com/developer/get-started) , to get your own feedId and access key.
-5. Get arduino libraries atleast for Ethernet.
+4. Create account for [AT&T's M2X] (https://m2x.att.com/developer/get-started) , to get your own feedId and access key.
+5. Get arduino libraries, atleast for Ethernet.
 
 
 LICENSE
 =======
-
 This software is released under the MIT license. See [`LICENSE`](LICENSE) for the terms.
