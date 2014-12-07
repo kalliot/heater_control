@@ -56,11 +56,11 @@ struct ipcmd ipCommands[] = {
 
 
 
-struct ad adArr[]= {
-  {0,"boiler",  0,0,0.0,0,0.5,0,0.0,1023,120.0,0,0.0,0,0.0},
-  {1,"ambient", 0,0,0.0,0,0.5,0,0.0,1023,60.0,0,0.0,0,0.0},
-  {2,"hothousewater",0,0,0.0,0,0.5,0,0.0,1023,100.0,0,0.0,0,0.0},
-  {3,"radiator",0,0,0.0,0,0.5,0,0.0,1023,60.0,0,0.0,0,0.0}
+struct ad adArr[]= { //prev   dif    min       max         meas    delta
+  {0,"boiler",  0,     0,0.0, 0,0.5, 174,21.0, 935, 100.0,  0,0.0,  0,0.0},
+  {1,"ambient", 0,     0,0.0, 0,0.3, 372,2.2,  964,  36.5,  0,0.0,  0,0.0},
+  {2,"hothousewater",0,0,0.0, 0,0.5, 7,  21.0, 1023,100.0,  0,0.0,  0,0.0},
+  {3,"radiator",0,     0,0.0, 0,0.3, 7,  21.0, 539,  36.5,  0,0.0,  0,0.0}
 };
 
 int readAdChannels(struct ad *ad, int cnt);
@@ -352,7 +352,6 @@ int initAdChannels(struct ad *ad, int cnt)
     ad[analogChannel].delta.digital=ad[analogChannel].maxcal.digital - ad[analogChannel].mincal.digital;
     ad[analogChannel].delta.analog=ad[analogChannel].maxcal.analog - ad[analogChannel].mincal.analog;
   }
-  // todo: calculate diff in digital from diff.analog values.
 }
 
 
@@ -380,7 +379,10 @@ int calcAdChannels(struct ad *ad, int cnt)
     // inter- and extrapolation
     ddelta=ad[analogChannel].delta.digital ;
     adelta=ad[analogChannel].delta.analog;
-    ad[analogChannel].measured.analog  = digital * adelta / ddelta; 
+
+    ad[analogChannel].measured.analog  = ad[analogChannel].mincal.analog +
+      (digital - ad[analogChannel].mincal.digital) * adelta / ddelta;
+
     ad[analogChannel].changed=0;
     if ((abs(ad[analogChannel].measured.analog - ad[analogChannel].prev.analog)) > ad[analogChannel].diff.analog) {
       ad[analogChannel].prev.analog = ad[analogChannel].measured.analog;
