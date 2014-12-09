@@ -29,6 +29,7 @@ struct ad {
   int port;
   char *name;
   int changed;
+  int last_send;
   struct dig2a prev;
   struct dig2a diff;
   struct dig2a mincal;
@@ -56,11 +57,11 @@ struct ipcmd ipCommands[] = {
 
 
 
-struct ad adArr[]= { //prev   dif    min       max         meas    delta
-  {0,"boiler",  0,     0,0.0, 0,0.5, 174,21.0, 935, 100.0,  0,0.0,  0,0.0},
-  {1,"ambient", 0,     0,0.0, 0,0.3, 372,2.2,  964,  36.5,  0,0.0,  0,0.0},
-  {2,"hothousewater",0,0,0.0, 0,0.5, 7,  21.0, 1023,100.0,  0,0.0,  0,0.0},
-  {3,"radiator",0,     0,0.0, 0,0.3, 7,  21.0, 539,  36.5,  0,0.0,  0,0.0}
+struct ad adArr[]= {          //prev   dif    min       max         meas    delta
+  {0,"boiler",       0,0,     0,0.0, 0,0.5, 174,21.0, 935, 100.0,  0,0.0,  0,0.0},
+  {1,"ambient",      0,0,     0,0.0, 0,0.3, 372,2.2,  964,  36.5,  0,0.0,  0,0.0},
+  {2,"hothousewater",0,0,     0,0.0, 0,0.5, 7,  21.0, 1023,100.0,  0,0.0,  0,0.0},
+  {3,"radiator",     0,0,     0,0.0, 0,0.3, 7,  21.0, 539,  36.5,  0,0.0,  0,0.0}
 };
 
 int readAdChannels(struct ad *ad, int cnt);
@@ -126,6 +127,7 @@ void processAD()
   readAdChannels(adArr,sizeof(adArr) / sizeof(struct ad));
   cnt++;
   if (cnt==AD_SAMPLECNT) {
+    sched.oscillate(13,150, LOW,2);
     calcAdChannels(adArr,sizeof(adArr) / sizeof(struct ad));
     sendM2X(adArr,sizeof(adArr) / sizeof(struct ad));
     cnt=0;
@@ -268,7 +270,6 @@ int sendM2X(struct ad *ad,int cnt)
     len2(second())+"Z";
   
   timebuf.toCharArray(chbuf,21);
-  Serial.println(timebuf);
   for (int chan = 0; chan < cnt; chan++) {    
     if (ad[chan].changed) {
       values[m2xpos]=ad[chan].measured.analog;
@@ -279,6 +280,8 @@ int sendM2X(struct ad *ad,int cnt)
     }
   }
   if (m2xpos) {
+    digitalWrite(13,1);
+    Serial.println();
     Serial.print(m2xpos);
     Serial.println(" records to send to M2X iot server");
     
@@ -289,12 +292,12 @@ int sendM2X(struct ad *ad,int cnt)
 
     response = m2xClient.postMultiple(feedId, m2xpos, streamNames,
 				      counts, ats, values);
+    digitalWrite(13,0);
     Serial.print("M2x client response code: ");
     Serial.println(response);
   }
   else
-    Serial.println("nothing to send");
-  
+    Serial.print(".");
   return m2xpos;
 }
 
@@ -368,6 +371,8 @@ int calcAdChannels(struct ad *ad, int cnt)
   int digital=0;
   int ddelta;
   float adelta,foo;
+  int ts=now();
+  bool timeout=false;
 
   for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
     digital = ad[analogChannel].measured.digital / AD_SAMPLECNT;
@@ -379,10 +384,12 @@ int calcAdChannels(struct ad *ad, int cnt)
       (digital - ad[analogChannel].mincal.digital) * adelta / ddelta;
 
     ad[analogChannel].changed=0;
-    if ((abs(ad[analogChannel].measured.analog - ad[analogChannel].prev.analog)) > ad[analogChannel].diff.analog) {
+    timeout=(ts-ad[analogChannel].last_send > 1800);
+    if (timeout || ((abs(ad[analogChannel].measured.analog - ad[analogChannel].prev.analog)) > ad[analogChannel].diff.analog)) {
       ad[analogChannel].prev.analog = ad[analogChannel].measured.analog;
       ad[analogChannel].prev.digital = digital ;
       ad[analogChannel].changed=1;
+      ad[analogChannel].last_send=ts;
     }
     ad[analogChannel].measured.digital = 0;
   }
