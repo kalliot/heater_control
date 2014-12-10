@@ -53,6 +53,7 @@ Timer sched;
 String httpReply;
 int httpErr;
 int httpLen;
+int measTimeout=1800;
 
 EthernetClient client;
 M2XStreamClient m2xClient(&client, m2xKey);
@@ -70,6 +71,9 @@ void setup() {
   Serial.begin(9600);
   pinMode(13, OUTPUT);
   Serial.println("Start");
+  //eepWriteAll();
+  eepReadAll();
+  eepShow();
   initAdChannels(adArr,sizeof(adArr) / sizeof(struct ad));
   setTime(RTC.get());
   succ=Ethernet.begin(mac);
@@ -286,7 +290,7 @@ int calcAdChannels(struct ad *ad, int cnt)
       (digital - ad[analogChannel].mincal.digital) * adelta / ddelta;
 
     ad[analogChannel].changed=0;
-    timeout=(ts-ad[analogChannel].last_send > 1800);
+    timeout=(ts-ad[analogChannel].last_send > measTimeout);
     if (timeout || ((abs(ad[analogChannel].measured.analog - ad[analogChannel].prev.analog)) > ad[analogChannel].diff.analog)) {
       ad[analogChannel].prev.analog = ad[analogChannel].measured.analog;
       ad[analogChannel].prev.digital = digital ;
