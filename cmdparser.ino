@@ -1,4 +1,5 @@
 #include <Ethernet.h>
+#include "eepromsetup.h"
 
 struct ipcmd {
   char name[10];
@@ -6,15 +7,71 @@ struct ipcmd {
   void (* handler)(EthernetClient, int, char **);
 };
 
+// command symbolic names are kept on array, to make parsing more elegant.
 static struct ipcmd commands[] = {
-  {"SETIO",3,ipsetio},
-  {"CLOSE",0,ipclose},
-  {"EVENTS",1,ipevents},
+  {"setio",    3, ipsetio},
+  {"close",    0, ipclose},
+  {"events",   1, ipevents},
+  {"adcalibr", 4, ipadcalibr},
+  {"timeout",  2, iptimeout},
+  {"m2xfeed",  1, ipm2xfeed},
+  {"m2xkey",   1, ipm2xkey},
+  {"savesetup",0, ipsavesetup},
   {"",0,NULL}
 };
 
 
+static void ipadcalibr(EthernetClient client,int argc,char *argv[])
+{
+  for (int i=0;i < sizeof(adArr) / sizeof(struct ad);i++) {
+    if (!strcmp(adArr[i].name,argv[1])) {
+      if (!strcmp(argv[2],"min")) {
+	return;
+      }
+      else if (!strcmp(argv[2],"max")) {
+	return;
+      }
+      else if (!strcmp(argv[2],"diff")) {
+	return;
+      }
+      else {
+	client.write(argv[0]);
+	client.write(":ERR:UNKNOWN PARAMETER:");
+	client.write(argv[2]);
+	client.write("\n");
+      }
+      return;
+    }
+  }
+  client.write(argv[0]);
+  client.write(":ERR:UNKNOWN CHANNEL:");
+  client.write(argv[1]);
+  client.write("\n");
+  return;
+}
 
+static void ipsavesetup(EthernetClient client,int argc,char *argv[])
+{
+  eepWriteAll();
+  return;
+}
+
+static void iptimeout(EthernetClient client,int argc,char *argv[])
+{
+  return;
+}
+
+static void ipm2xfeed(EthernetClient client,int argc,char *argv[])
+{
+  memcpy(eepromsetup.m2xfeed,argv[1],33);
+  return;
+}
+
+static void ipm2xkey(EthernetClient client,int argc,char *argv[])
+{
+  memcpy(eepromsetup.m2xkey,argv[1],33);
+  return;
+}
 
 static void ipsetio(EthernetClient client,int argc,char *argv[])
 {   
@@ -56,6 +113,9 @@ static void ipclose(EthernetClient c,int argc,char *argv[])
   c.stop();
 }
 
+// save pointer of each string from beginning and after comma to an array of char pointers
+// change every comma to terminating zero.
+// by this way the wptr array seems to stor N pcs of zero terminated char arrays.
 void cmdParse(EthernetClient c,char *command)
 { 
   int i;
@@ -95,4 +155,3 @@ void cmdParse(EthernetClient c,char *command)
   c.write(wptr[0]);
   c.write(":ERR:COMMAND NOT FOUND\n");  
 }
-

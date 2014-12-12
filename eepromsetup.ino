@@ -1,19 +1,19 @@
+/*
+ * eepromsetup.ino
+ * All configuration variables can be stored to eeprom.
+ * Eeprom is nice place for them, because each Arduino
+ * processortype has an eeprom area.
+ * Uno : 1044 bytes
+ * Mega: 4096 bytes
+ */
+
 #include <EEPROM.h>
+#include "eepromsetup.h"
 
 #define VERNUM 0x100
+#define EEPROM_MAX 4096
 
-struct adsetup {
-  int mindigital;
-  float minvalue;
-  int maxdigital;
-  float maxvalue;
-};
-	
-struct {
-  int id;
-  int meastimeout;
-  struct adsetup ad[4];
-} eepromsetup;
+struct eepromsetup eepromsetup;
 
 void eepShow()
 {
@@ -21,6 +21,11 @@ void eepShow()
   Serial.println(sizeof(eepromsetup));
   Serial.print("measTimeout is ");
   Serial.println(eepromsetup.meastimeout);
+  Serial.print("m2xfeed is ");
+  Serial.println(eepromsetup.m2xfeed);
+  Serial.print("m2xkey is ");
+  Serial.println(eepromsetup.m2xkey);
+
   for (int i=0;i<4;i++) {
     Serial.print(i);
     Serial.print(" ");
@@ -30,7 +35,9 @@ void eepShow()
     Serial.print(" ");
     Serial.print(eepromsetup.ad[i].maxdigital);
     Serial.print(" ");
-    Serial.println(eepromsetup.ad[i].maxvalue);
+    Serial.print(eepromsetup.ad[i].maxvalue);
+    Serial.print(" ");
+    Serial.println(eepromsetup.ad[i].diff);
   }
 }
 
@@ -55,7 +62,7 @@ static void blockwrite(void *ptr,int target,int len)
     EEPROM.write(target,*c);
     c++;
     target++;
-    if (target==2048)
+    if (target==EEPROM_MAX)
       break;
   }
 }
@@ -65,10 +72,13 @@ void eepReadAll()
   blockread(&eepromsetup,0,sizeof(eepromsetup));
   Serial.print("EEPROM content is ");
 
-  if (eepromsetup.id==VERNUM)
-    Serial.println("valid");
+  if (eepromsetup.id==VERNUM) {
+     Serial.println("valid");
+     strcpy(feedId,eepromsetup.m2xfeed);
+     strcpy(m2xKey,eepromsetup.m2xkey);
+  }
   else {
-    Serial.println("invalid");
+    Serial.println("invalid, resetting default values");
     eepWriteAll();
   }
 }
@@ -85,9 +95,12 @@ void eepWriteAll()
     eepromsetup.ad[i].minvalue   = adArr[i].mincal.analog;
     eepromsetup.ad[i].maxdigital = adArr[i].maxcal.digital;
     eepromsetup.ad[i].maxvalue   = adArr[i].maxcal.analog;
+    eepromsetup.ad[i].diff       = adArr[i].diff.analog;
   }
   eepromsetup.id=VERNUM;
   eepromsetup.meastimeout=measTimeout;
+  strcpy(eepromsetup.m2xfeed,feedId);
+  strcpy(eepromsetup.m2xkey,m2xKey);
   blockwrite(&eepromsetup,0,sizeof(eepromsetup));
 }
 		

@@ -10,10 +10,11 @@
 #include "M2XStreamClient.h"
 
 #define AD_SAMPLECNT 10
+#define FLAGS_DATACHANGE 0x01
 
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
-char feedId[] = "<feed id>"; // Feed you want to push to
-char m2xKey[] = "<M2X access key>"; // Your M2X access key
+char feedId[33] = "<feed id>"; // Feed you want to push to
+char m2xKey[33] = "<M2X access key>"; // Your M2X access key
 
 IPAddress ip(192,168,1,177);
 IPAddress gateway(192,168,1, 1);
@@ -28,7 +29,7 @@ struct dig2a
 struct ad {
   int port;
   char *name;
-  int changed;
+  int flags;
   int last_send;
   struct dig2a prev;
   struct dig2a diff;
@@ -59,8 +60,6 @@ EthernetClient client;
 M2XStreamClient m2xClient(&client, m2xKey);
 EthernetServer ipserver = EthernetServer(9000);
 EthernetClient ipclient;
-
-
 
 EthernetUDP Udp;
 unsigned int localPort = 8888;  // local port to listen for UDP packets
@@ -177,7 +176,7 @@ int sendM2X(struct ad *ad,int cnt)
   
   timebuf.toCharArray(chbuf,21);
   for (int chan = 0; chan < cnt; chan++) {    
-    if (ad[chan].changed) {
+    if (ad[chan].flags & FLAGS_DATACHANGE) {
       values[m2xpos]=ad[chan].measured.analog;
       counts[m2xpos]=1;
       ats[m2xpos]=chbuf;
@@ -289,12 +288,12 @@ int calcAdChannels(struct ad *ad, int cnt)
     ad[analogChannel].measured.analog  = ad[analogChannel].mincal.analog +
       (digital - ad[analogChannel].mincal.digital) * adelta / ddelta;
 
-    ad[analogChannel].changed=0;
+    ad[analogChannel].flags &= ~FLAGS_DATACHANGE;
     timeout=(ts-ad[analogChannel].last_send > measTimeout);
     if (timeout || ((abs(ad[analogChannel].measured.analog - ad[analogChannel].prev.analog)) > ad[analogChannel].diff.analog)) {
       ad[analogChannel].prev.analog = ad[analogChannel].measured.analog;
       ad[analogChannel].prev.digital = digital ;
-      ad[analogChannel].changed=1;
+      ad[analogChannel].flags |= FLAGS_DATACHANGE;
       ad[analogChannel].last_send=ts;
     }
     ad[analogChannel].measured.digital = 0;
