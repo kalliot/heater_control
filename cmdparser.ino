@@ -94,8 +94,11 @@ static void ipshowsetup(EthernetClient client,int argc,char *argv[])
 
   client.write("m2xfeed,");
   client.write(eepromsetup.m2xfeed);
-  client.write("\nm2key,");
+  client.write("\nm2xkey,");
   client.write(eepromsetup.m2xkey);
+  client.write("\n");
+  client.write("timeout,iot,");
+  client.write(itoa(measTimeout,str,10));
   client.write("\n");
 
   for (int i=0;i < sizeof(adArr) / sizeof(struct ad);i++) {
@@ -131,23 +134,32 @@ static void ipshowsetup(EthernetClient client,int argc,char *argv[])
 static void ipsavesetup(EthernetClient client,int argc,char *argv[])
 {
   eepWriteAll();
+  reply2remote(client,argv[0],":OK","");
   return;
 }
 
 static void iptimeout(EthernetClient client,int argc,char *argv[])
 {
+  if (!strcmp(argv[1],"iot")) {
+    measTimeout=atoi(argv[2]);
+    reply2remote(client,argv[0],":OK","");
+  }
+  else
+    reply2remote(client,argv[0],":ERR:UNKNOWN PARAM:",argv[1]);
   return;
 }
 
 static void ipm2xfeed(EthernetClient client,int argc,char *argv[])
 {
   memcpy(eepromsetup.m2xfeed,argv[1],33);
+  reply2remote(client,argv[0],":OK","");
   return;
 }
 
 static void ipm2xkey(EthernetClient client,int argc,char *argv[])
 {
   memcpy(eepromsetup.m2xkey,argv[1],33);
+  reply2remote(client,argv[0],":OK","");
   return;
 }
 

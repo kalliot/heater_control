@@ -13,8 +13,8 @@
 #define FLAGS_DATACHANGE 0x01
 
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
-char feedId[33] = "<feed id>"; // Feed you want to push to
-char m2xKey[33] = "<M2X access key>"; // Your M2X access key
+char feedId[33] = ""; // Feed you want to push to
+char m2xKey[33] = ""; // Your M2X access key
 
 IPAddress ip(192,168,1,177);
 IPAddress gateway(192,168,1, 1);
@@ -109,6 +109,8 @@ void processAD()
   String message;
   static int cnt=0;
 
+  if (!cnt)
+    resetAdChannels(adArr,sizeof(adArr) / sizeof(struct ad));
   readAdChannels(adArr,sizeof(adArr) / sizeof(struct ad));
   cnt++;
   if (cnt==AD_SAMPLECNT) {
@@ -185,6 +187,10 @@ int sendM2X(struct ad *ad,int cnt)
     }
   }
   if (m2xpos) {
+    if (feedId[0]==0) {
+      Serial.println("feed id not known");
+      return 0;
+    }
     digitalWrite(13,1);
     Serial.println();
     Serial.print(m2xpos);
@@ -296,11 +302,15 @@ int calcAdChannels(struct ad *ad, int cnt)
       ad[analogChannel].flags |= FLAGS_DATACHANGE;
       ad[analogChannel].last_send=ts;
     }
-    ad[analogChannel].measured.digital = 0;
   }
   return 0;
 }
 
+void resetAdChannels(struct ad *ad, int cnt)
+{
+  for (int analogChannel = 0; analogChannel < cnt; analogChannel++) 
+    ad[analogChannel].measured.digital = 0;
+}
 
 
 

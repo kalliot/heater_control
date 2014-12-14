@@ -1,0 +1,16 @@
+m2xfeed,<feed id>
+m2xkey,<M2X access key>
+timeout,iot,1800
+adcalibr,boiler,min,21.00,174
+adcalibr,boiler,max,100.00,935
+adcalibr,boiler,diff,0.50
+adcalibr,ambient,min,2.20,372
+adcalibr,ambient,max,36.50,964
+adcalibr,ambient,diff,0.30
+adcalibr,hothousewater,min,21.00,7
+adcalibr,hothousewater,max,100.00,1023
+adcalibr,hothousewater,diff,0.50
+adcalibr,radiator,min,21.00,7
+adcalibr,radiator,max,36.50,539
+adcalibr,radiator,diff,0.30
+savesetup

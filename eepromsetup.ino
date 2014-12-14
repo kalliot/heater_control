@@ -99,8 +99,8 @@ void eepWriteAll()
   }
   eepromsetup.id=VERNUM;
   eepromsetup.meastimeout=measTimeout;
-  strcpy(eepromsetup.m2xfeed,feedId);
-  strcpy(eepromsetup.m2xkey,m2xKey);
+  // feedId and key need not to be copied, they are stored directly
+  // to eepromsetup
   blockwrite(&eepromsetup,0,sizeof(eepromsetup));
 }
 		
