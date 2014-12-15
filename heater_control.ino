@@ -16,9 +16,15 @@ byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 char feedId[33] = ""; // Feed you want to push to
 char m2xKey[33] = ""; // Your M2X access key
 
+volatile unsigned int _kwCounter = 0;   // counter for the number of interrupts
+int digvalue=150; // in 30 seconds
+float analogvalue=1.0;
+float kw=0.0;
+
 IPAddress ip(192,168,1,177);
 IPAddress gateway(192,168,1, 1);
 IPAddress subnet(255, 255, 0, 0);
+
 
 struct dig2a
 {
@@ -39,6 +45,18 @@ struct ad {
   struct dig2a delta;
 };
 
+/*
+struct cnt {
+  int *counter;
+  char *name;
+  int flags;
+  int last_send;
+  struct dig2a prev;
+  struct dig2a diff;
+  struct dig2a scale;
+  struct dig2a measured;
+};
+*/
 
 struct ad adArr[]= {          //prev   dif    min       max         meas    delta
   {0,"boiler",       0,0,     0,0.0, 0,0.5, 174,21.0, 935, 100.0,  0,0.0,  0,0.0},
@@ -46,6 +64,12 @@ struct ad adArr[]= {          //prev   dif    min       max         meas    delt
   {2,"hothousewater",0,0,     0,0.0, 0,0.5, 7,  21.0, 1023,100.0,  0,0.0,  0,0.0},
   {3,"radiator",     0,0,     0,0.0, 0,0.3, 7,  21.0, 539,  36.5,  0,0.0,  0,0.0}
 };
+
+/*
+struct cnt cntArr[] = {       //prev  dif    scale   measured
+  {&_kwCounter,"electricity",  0,0,     0,0.0, 0,0.3, 150,1.0,  0,0.0}
+}
+*/
 
 int readAdChannels(struct ad *ad, int cnt);
 String buildServerMsg(struct ad *ad,int cnt);
@@ -95,6 +119,7 @@ void setup() {
   setSyncProvider(getNtpTime);
   sched.every(1000,processAD);
   sched.every(200,checkEthernet);
+  attachInterrupt(1, elmeter, CHANGE);
 }
 
 
@@ -102,6 +127,12 @@ void loop()
 {
   sched.update();
   refreshEvents();
+}
+
+
+void elmeter()
+{
+  _kwCounter++;
 }
 
 void processAD()
@@ -113,15 +144,27 @@ void processAD()
     resetAdChannels(adArr,sizeof(adArr) / sizeof(struct ad));
   readAdChannels(adArr,sizeof(adArr) / sizeof(struct ad));
   cnt++;
-  if (cnt==AD_SAMPLECNT) {
+  if ((cnt % AD_SAMPLECNT)==0) {
     sched.oscillate(13,150, LOW,2);
     calcAdChannels(adArr,sizeof(adArr) / sizeof(struct ad));
     sendM2X(adArr,sizeof(adArr) / sizeof(struct ad));
-    cnt=0;
+    resetAdChannels(adArr,sizeof(adArr) / sizeof(struct ad));
+  }
+  if ((cnt % (AD_SAMPLECNT * 3))==0) {
+    calcKw();
   }
 }
 
 
+void calcKw()
+{
+  static unsigned int prevCnt=0;
+
+  if (prevCnt!=0) {
+    kw=(_kwCounter-prevCnt) / (digvalue * analogvalue);
+  }
+  prevCnt=_kwCounter;
+}
 
 void checkEthernet()
 {
@@ -160,15 +203,19 @@ String len2(int val)
 
 int sendM2X(struct ad *ad,int cnt)
 {
-  const char *streamNames[4];
-  int counts[4];
-  const char *ats[4]; 
-  double values[4];
+  const char *streamNames[5];
+  int counts[5];
+  const char *ats[5];
+  double values[5];
   int m2xpos=0;
   String timebuf;
   char chbuf[22];
   int response;
- 
+  static float prevkw=0.0;
+  static int cntLastSend=0;
+  bool timeout=false;
+  int ts;
+
   timebuf=String(year())+"-"+
     len2(month())+"-"+
     len2(day())+"T"+
@@ -185,6 +232,17 @@ int sendM2X(struct ad *ad,int cnt)
       streamNames[m2xpos]=ad[chan].name;
       m2xpos++;
     }
+  }
+  ts=now();
+  timeout=(ts-cntLastSend > measTimeout);
+  if (timeout || (abs(kw-prevkw) > 0.30)) {
+    values[m2xpos]=kw;
+    counts[m2xpos]=1;
+    ats[m2xpos]=chbuf;
+    streamNames[m2xpos]="electricity";
+    cntLastSend=ts;
+    prevkw=kw;
+    m2xpos++;
   }
   if (m2xpos) {
     if (feedId[0]==0) {
@@ -268,7 +326,7 @@ int readAdChannels(struct ad *ad, int cnt)
 {
   int digital=0;
   int ddelta;
-  float adelta,foo;
+  float adelta;
 
   for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
     digital= analogRead(ad[analogChannel].port);
@@ -281,7 +339,7 @@ int calcAdChannels(struct ad *ad, int cnt)
 {
   int digital=0;
   int ddelta;
-  float adelta,foo;
+  float adelta;
   int ts=now();
   bool timeout=false;
 
