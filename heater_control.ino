@@ -17,9 +17,6 @@ char feedId[33] = ""; // Feed you want to push to
 char m2xKey[33] = ""; // Your M2X access key
 
 volatile unsigned int _kwCounter = 0;   // counter for the number of interrupts
-int digvalue=150; // in 30 seconds
-float analogvalue=1.0;
-float kw=0.0;
 
 IPAddress ip(192,168,1,177);
 IPAddress gateway(192,168,1, 1);
@@ -45,18 +42,22 @@ struct ad {
   struct dig2a delta;
 };
 
-/*
+
 struct cnt {
-  int *counter;
+  unsigned int counter;
   char *name;
   int flags;
-  int last_send;
+  time_t last_send;
+  long avg_counter;
+  int avg_samples;
   struct dig2a prev;
+  struct dig2a prevsnd;
   struct dig2a diff;
+  struct dig2a diff_factor;
   struct dig2a scale;
   struct dig2a measured;
 };
-*/
+
 
 struct ad adArr[]= {          //prev   dif    min       max         meas    delta
   {0,"boiler",       0,0,     0,0.0, 0,0.5, 174,21.0, 935, 100.0,  0,0.0,  0,0.0},
@@ -65,11 +66,11 @@ struct ad adArr[]= {          //prev   dif    min       max         meas    delt
   {3,"radiator",     0,0,     0,0.0, 0,0.3, 7,  21.0, 539,  36.5,  0,0.0,  0,0.0}
 };
 
-/*
-struct cnt cntArr[] = {       //prev  dif    scale   measured
-  {&_kwCounter,"electricity",  0,0,     0,0.0, 0,0.3, 150,1.0,  0,0.0}
-}
-*/
+
+struct cnt cntArr[] = {         //prev prevsnd    diff   factor  scale  measured
+  {0,"electricity",  0,0,0,0,     0,0.0, 0,0.0,   0,0.2, 0,0.21, 50,1.0,  0,0.0}
+};
+
 
 int readAdChannels(struct ad *ad, int cnt);
 String buildServerMsg(struct ad *ad,int cnt);
@@ -119,6 +120,7 @@ void setup() {
   setSyncProvider(getNtpTime);
   sched.every(1000,processAD);
   sched.every(200,checkEthernet);
+  cntArr[0].last_send=now();
   attachInterrupt(1, elmeter, CHANGE);
 }
 
@@ -147,23 +149,32 @@ void processAD()
   if ((cnt % AD_SAMPLECNT)==0) {
     sched.oscillate(13,150, LOW,2);
     calcAdChannels(adArr,sizeof(adArr) / sizeof(struct ad));
+    calcKw();
     sendM2X(adArr,sizeof(adArr) / sizeof(struct ad));
     resetAdChannels(adArr,sizeof(adArr) / sizeof(struct ad));
   }
-  if ((cnt % (AD_SAMPLECNT * 3))==0) {
+  /*  if ((cnt % (AD_SAMPLECNT * 3))==0) {
     calcKw();
   }
+  */
 }
 
 
 void calcKw()
 {
-  static unsigned int prevCnt=0;
+  unsigned int tmpCnt;
 
-  if (prevCnt!=0) {
-    kw=(_kwCounter-prevCnt) / (digvalue * analogvalue);
+  noInterrupts();
+  tmpCnt=_kwCounter;
+  interrupts();
+  cntArr[0].prev.analog=cntArr[0].measured.analog;
+  cntArr[0].measured.analog = (tmpCnt-cntArr[0].prev.digital) / (cntArr[0].scale.digital * cntArr[0].scale.analog); 
+  if (cntArr[0].measured.analog > 20.0) {
+    cntArr[0].measured.analog = 20.0;
   }
-  prevCnt=_kwCounter;
+  cntArr[0].avg_counter+=tmpCnt-cntArr[0].prev.digital;
+  cntArr[0].avg_samples++;
+  cntArr[0].prev.digital=tmpCnt;
 }
 
 void checkEthernet()
@@ -201,29 +212,41 @@ String len2(int val)
     return "0"+String(val);
 }
 
+char *buildTime(time_t ts,char *buff)
+{
+  String timebuf;
+
+  timebuf=String(year(ts))+"-"+
+    len2(month(ts))+"-"+
+    len2(day(ts))+"T"+
+    len2(hour(ts))+":"+
+    len2(minute(ts))+":"+
+    len2(second(ts))+"Z";
+
+  timebuf.toCharArray(buff,21);
+  return buff;
+}
+
 int sendM2X(struct ad *ad,int cnt)
 {
   const char *streamNames[5];
   int counts[5];
-  const char *ats[5];
-  double values[5];
+  const char *ats[6];
+  double values[6];
   int m2xpos=0;
-  String timebuf;
+  int samplecnt=0;
   char chbuf[22];
+  char prevtime[22];
   int response;
   static float prevkw=0.0;
   static int cntLastSend=0;
   bool timeout=false;
-  int ts;
+  time_t ts;
 
-  timebuf=String(year())+"-"+
-    len2(month())+"-"+
-    len2(day())+"T"+
-    len2(hour())+":"+
-    len2(minute())+":"+
-    len2(second())+"Z";
-  
-  timebuf.toCharArray(chbuf,21);
+  ts=now();
+  buildTime(ts,chbuf);
+
+  // ad build part
   for (int chan = 0; chan < cnt; chan++) {    
     if (ad[chan].flags & FLAGS_DATACHANGE) {
       values[m2xpos]=ad[chan].measured.analog;
@@ -231,19 +254,68 @@ int sendM2X(struct ad *ad,int cnt)
       ats[m2xpos]=chbuf;
       streamNames[m2xpos]=ad[chan].name;
       m2xpos++;
+      samplecnt++;
     }
   }
-  ts=now();
-  timeout=(ts-cntLastSend > measTimeout);
-  if (timeout || (abs(kw-prevkw) > 0.30)) {
-    values[m2xpos]=kw;
+
+  // counter build part
+  timeout=(ts-cntArr[0].last_send > measTimeout);
+  float diff=abs(cntArr[0].measured.analog-cntArr[0].prevsnd.analog);
+  bool changed;
+  float average;
+  float limit;
+
+  limit =  cntArr[0].diff.analog * (1.0 + cntArr[0].measured.analog * cntArr[0].diff_factor.analog);
+  changed=(diff > limit);
+  if (changed) {
+    if (ts-cntArr[0].last_send > 30) {
+      if (cntArr[0].avg_samples > 3) {
+	average=(cntArr[0].avg_counter / cntArr[0].avg_samples) / (cntArr[0].scale.digital * cntArr[0].scale.analog); 
+	values[m2xpos]=average;
+      }
+      else
+	values[m2xpos]=cntArr[0].prev.analog;
+      values[m2xpos+1]=cntArr[0].measured.analog;
+      counts[m2xpos]=2;
+      buildTime(ts-10,prevtime);
+      samplecnt=m2xpos;
+      ats[m2xpos]=prevtime;
+      ats[m2xpos+1]=chbuf;
+      samplecnt=m2xpos+1;
+      streamNames[m2xpos]=cntArr[0].name;
+      cntArr[0].last_send=ts;
+      cntArr[0].prevsnd.analog=cntArr[0].measured.analog;
+      cntArr[0].avg_samples=0;
+      cntArr[0].avg_counter=0;
+      m2xpos++;
+      samplecnt++;
+    }
+    else {
+      values[m2xpos]=cntArr[0].measured.analog;
+      counts[m2xpos]=1;
+      ats[m2xpos]=chbuf;
+      streamNames[m2xpos]=cntArr[0].name;
+      cntArr[0].last_send=ts;
+      cntArr[0].prevsnd.analog=cntArr[0].measured.analog;
+      cntArr[0].avg_samples=0;
+      cntArr[0].avg_counter=0;
+      m2xpos++;
+      samplecnt=m2xpos;
+    }
+  }
+  else if (timeout) {
+    values[m2xpos]=cntArr[0].measured.analog;
     counts[m2xpos]=1;
     ats[m2xpos]=chbuf;
-    streamNames[m2xpos]="electricity";
-    cntLastSend=ts;
-    prevkw=kw;
+    streamNames[m2xpos]=cntArr[0].name;
+    cntArr[0].last_send=ts;
+    cntArr[0].prevsnd.analog=cntArr[0].measured.analog;
+    cntArr[0].avg_samples=0;
+    cntArr[0].avg_counter=0;
     m2xpos++;
+    samplecnt=m2xpos;
   }
+  // send part
   if (m2xpos) {
     if (feedId[0]==0) {
       Serial.println("feed id not known");
@@ -251,16 +323,17 @@ int sendM2X(struct ad *ad,int cnt)
     }
     digitalWrite(13,1);
     Serial.println();
-    Serial.print(m2xpos);
+    Serial.print(samplecnt);
     Serial.println(" records to send to M2X iot server");
     
     showCounters(counts,m2xpos);
     showStreamnames(streamNames,m2xpos);
-    showTimes(ats,m2xpos);
-    showValues(values,m2xpos);
+    showTimes(ats,samplecnt);
+    showValues(values,samplecnt);
 
     response = m2xClient.postMultiple(feedId, m2xpos, streamNames,
 				      counts, ats, values);
+
     digitalWrite(13,0);
     Serial.print("M2x client response code: ");
     Serial.println(response);
