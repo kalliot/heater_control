@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <jsonlite.h>
 #include "M2XStreamClient.h"
+#include "Iot.h"
 
 #define AD_SAMPLECNT 10
 #define FLAGS_DATACHANGE 0x01
@@ -85,9 +86,9 @@ EthernetClient client;
 M2XStreamClient m2xClient(&client, m2xKey);
 EthernetServer ipserver = EthernetServer(9000);
 EthernetClient ipclient;
-
 EthernetUDP Udp;
 unsigned int localPort = 8888;  // local port to listen for UDP packets
+Iot iot(&m2xClient);
 
 void setup() {
   int succ;
@@ -241,13 +242,13 @@ void sendM2X(struct ad *ad,int cnt)
 
   ts=now();
   buildTime(ts,chbuf);
-  iotReset();
+  iot.reset();
   // ad build part
   for (int chan = 0; chan < cnt; chan++) {    
     if (ad[chan].flags & FLAGS_DATACHANGE) {
-      iotName(ad[chan].name);
-      iotAddValue(ad[chan].measured.analog,chbuf);
-      iotNext();
+      iot.name(ad[chan].name);
+      iot.addValue(ad[chan].measured.analog,chbuf);
+      iot.next();
       sendingad=true;
     }
   }
@@ -274,40 +275,40 @@ void sendM2X(struct ad *ad,int cnt)
 	val=cntArr[0].prev.analog;
 
       buildTime(ts-10,prevtime);
-      iotName(cntArr[0].name);
-      iotAddValue(val,prevtime);
-      iotAddValue(cntArr[0].measured.analog,chbuf);
-      iotNext();
+      iot.name(cntArr[0].name);
+      iot.addValue(val,prevtime);
+      iot.addValue(cntArr[0].measured.analog,chbuf);
+      iot.next();
       cntPrepareForNext(0,ts);
      }
     else {
-      iotName(cntArr[0].name);
-      iotAddValue(cntArr[0].measured.analog,chbuf);
-      iotNext();
+      iot.name(cntArr[0].name);
+      iot.addValue(cntArr[0].measured.analog,chbuf);
+      iot.next();
       cntPrepareForNext(0,ts);
     }
   }
   else if (timeout) {
     val=(cntArr[0].avg_counter / cntArr[0].avg_samples) / (cntArr[0].scale.digital * cntArr[0].scale.analog); 
-    iotName(cntArr[0].name);
-    iotAddValue(val,chbuf);
-    iotNext();
+    iot.name(cntArr[0].name);
+    iot.addValue(val,chbuf);
+    iot.next();
     cntPrepareForNext(0,ts);
   }
   // send part
-  if (iotRecCnt()) {
+  if (iot.getRecCnt()) {
     if (feedId[0]==0) {
       Serial.println("feed id not known");
       return;
     }
     digitalWrite(13,1); // turn led on during iot send
     
-    iotShowCounters();
-    iotShowStreamnames();
-    iotShowTimes();
-    iotShowValues();
+    iot.showCounters();
+    iot.showStreamnames();
+    iot.showTimes();
+    iot.showValues();
 
-    response = iotSend(feedId);
+    response = iot.send(feedId);
     digitalWrite(13,0); // led off
     Serial.print("M2x client response code: ");
     Serial.println(response);
