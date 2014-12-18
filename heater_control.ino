@@ -65,17 +65,17 @@ struct cnt {
 // in future this table shall be stored mainly in eeprom.
 // and so is it's size
 struct ad adArr[]= {          //prev   dif    min       max         meas    delta
-  {0,"boiler",       0,0,     0,0.0, 0,0.5, 174,21.0, 935, 100.0,  0,0.0,  0,0.0},
-  {1,"ambient",      0,0,     0,0.0, 0,0.3, 372,2.2,  964,  36.5,  0,0.0,  0,0.0},
-  {2,"hothousewater",0,0,     0,0.0, 0,0.5, 7,  21.0, 1023,100.0,  0,0.0,  0,0.0},
-  {3,"radiator",     0,0,     0,0.0, 0,0.3, 7,  21.0, 539,  36.5,  0,0.0,  0,0.0}
+  {2,"boiler",       0,0,     0,0.0, 0,0.5, 174,21.0, 935, 100.0,  0,0.0,  0,0.0},
+  {3,"ambient",      0,0,     0,0.0, 0,0.3, 372,2.2,  964,  36.5,  0,0.0,  0,0.0},
+  {4,"hothousewater",0,0,     0,0.0, 0,0.5, 7,  21.0, 1023,100.0,  0,0.0,  0,0.0},
+  {5,"radiator",     0,0,     0,0.0, 0,0.3, 7,  21.0, 539,  36.5,  0,0.0,  0,0.0}
 };
 
 
 // counters are kept in array, this for preparing to have more of them.
 
 struct cnt cntArr[] = {         //prev prevsnd    diff   factor  scale  measured
-  {0,"electricity",  0,0,0,0,     0,0.0, 0,0.0,   0,0.2, 0,0.21, 50,1.0,  0,0.0}
+  {0,"electricity",  0,0,0,0,     0,0.0, 0,0.0,   0,0.1, 0,0.55, 50,1.0,  0,0.0}
 };
 
 Timer sched;
@@ -237,6 +237,7 @@ void sendM2X(struct ad *ad,int cnt)
   int response;
   bool timeout=false;
   time_t ts;
+  boolean sendingad=false;
 
   ts=now();
   buildTime(ts,chbuf);
@@ -247,11 +248,15 @@ void sendM2X(struct ad *ad,int cnt)
       iotName(ad[chan].name);
       iotAddValue(ad[chan].measured.analog,chbuf);
       iotNext();
+      sendingad=true;
     }
   }
 
   // counter build part
-  timeout=(ts-cntArr[0].last_send > measTimeout);
+  if (sendingad) // if already sending ad values, add counters a bit earlier to same packet
+    timeout=(ts-cntArr[0].last_send > measTimeout-300);
+  else
+    timeout=(ts-cntArr[0].last_send > measTimeout);
   float diff=abs(cntArr[0].measured.analog-cntArr[0].prevsnd.analog);
   bool changed;
   float limit;
@@ -283,8 +288,9 @@ void sendM2X(struct ad *ad,int cnt)
     }
   }
   else if (timeout) {
+    val=(cntArr[0].avg_counter / cntArr[0].avg_samples) / (cntArr[0].scale.digital * cntArr[0].scale.analog); 
     iotName(cntArr[0].name);
-    iotAddValue(cntArr[0].measured.analog,chbuf);
+    iotAddValue(val,chbuf);
     iotNext();
     cntPrepareForNext(0,ts);
   }
