@@ -97,6 +97,13 @@ void setup() {
   pinMode(13, OUTPUT);
   Serial.println("Start");
   eepReadAll();
+  // preparing for configurable channels.
+  // in future the amount of channels will be specified with config
+  // and this amount with channel names are saved to eeprom.
+  if (!iot.setBufferSizes(5)) {
+    Serial.println("Iot init failed\n");
+    return;
+  }
   eepShow();
   initAdChannels(adArr,sizeof(adArr) / sizeof(struct ad));
   setTime(RTC.get());
@@ -236,7 +243,7 @@ void sendM2X(struct ad *ad,int cnt)
   char chbuf[22];
   char prevtime[22];
   int response;
-  bool timeout=false;
+  boolean timeout=false;
   time_t ts;
   boolean sendingad=false;
 

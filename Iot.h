@@ -7,6 +7,7 @@
 class Iot {
   public:
     Iot(M2XStreamClient *m2xsc);
+    boolean setBufferSizes(int s);
     void reset();
     void name(char *name);
     void addValue(float value,char *ts);
@@ -19,12 +20,13 @@ class Iot {
     void showValues();
   private:
     M2XStreamClient *_m2xsc; 
-    const char *_streamNames[5];
-    int _counts[5];
-    const char *_ats[6];
-    double _values[6];
+    const char **_streamNames;
+    int *_counts;
+    const char **_ats;
+    double *_values;
     int _pos;
     int _samplecnt;
+    int _buffSizes;
 };
 
 #endif
