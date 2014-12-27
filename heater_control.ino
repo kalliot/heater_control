@@ -38,7 +38,7 @@ struct ad {
   int port;
   char *name;
   int flags;
-  int last_send;
+  time_t last_send;
   struct dig2a prev;
   struct dig2a diff;
   struct dig2a mincal;
@@ -125,7 +125,7 @@ void setup() {
   Udp.begin(localPort);
   setSyncInterval(7200);
   setSyncProvider(getNtpTime);
-  sched.every(1000,processAD);
+  sched.every(1000,processSensors);
   sched.every(200,checkEthernet);
   cntArr[0].last_send=now();
   attachInterrupt(1, elmeter, CHANGE);
@@ -142,21 +142,31 @@ void elmeter()
   _kwCounter++;
 }
 
-void processAD()
+void processSensors()
 {
-  String message;
   static int cnt=0;
+  boolean timeouts=false;
+  boolean changes=false;
+  time_t ts=now();
+  int chcnt=(sizeof(adArr) / sizeof(struct ad));
 
   if (!cnt)
-    resetAdChannels(adArr,sizeof(adArr) / sizeof(struct ad));
-  readAdChannels(adArr,sizeof(adArr) / sizeof(struct ad));
+    resetAdChannels(adArr,chcnt);
+  readAdChannels(adArr,chcnt);
   cnt++;
   if ((cnt % AD_SAMPLECNT)==0) {
     sched.oscillate(13,150, LOW,2);
-    calcAdChannels(adArr,sizeof(adArr) / sizeof(struct ad));
+    timeouts=chkAdTimeouts(adArr,chcnt, ts, false);
+    changes=chkAdChange(adArr,chcnt);
+    // if there is something to send, advance other channel sends
+    // in case they are enough near with timeout. This way we get
+    // more values to send in same packet.
+    if (timeouts || changes)
+      chkAdTimeouts(adArr,chcnt, ts, true);
+    calcAdChannels(adArr,chcnt);
     calcKw();
-    sendM2X(adArr,sizeof(adArr) / sizeof(struct ad));
-    resetAdChannels(adArr,sizeof(adArr) / sizeof(struct ad));
+    sendM2X(adArr,chcnt);
+    resetAdChannels(adArr,chcnt);
   }
 }
 
@@ -250,6 +260,7 @@ void sendM2X(struct ad *ad,int cnt)
   ts=now();
   buildTime(ts,chbuf);
   iot.reset();
+
   // ad build part
   for (int chan = 0; chan < cnt; chan++) {    
     if (ad[chan].flags & FLAGS_DATACHANGE) {
@@ -276,7 +287,7 @@ void sendM2X(struct ad *ad,int cnt)
     if (ts-cntArr[0].last_send > 30) {
       if (cntArr[0].avg_samples > 3) {
         // calculate average from previous samples
-	val=(cntArr[0].avg_counter / cntArr[0].avg_samples) / (cntArr[0].scale.digital * cntArr[0].scale.analog); 
+	val=(cntArr[0].avg_counter / cntArr[0].avg_samples) / (cntArr[0].scale.digital * cntArr[0].scale.analog);
       }
       else
 	val=cntArr[0].prev.analog;
@@ -302,6 +313,8 @@ void sendM2X(struct ad *ad,int cnt)
     iot.next();
     cntPrepareForNext(0,ts);
   }
+
+
   // send part
   if (iot.getRecCnt()) {
     if (feedId[0]==0) {
@@ -329,6 +342,7 @@ int initAdChannels(struct ad *ad, int cnt)
   for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
     ad[analogChannel].delta.digital=ad[analogChannel].maxcal.digital - ad[analogChannel].mincal.digital;
     ad[analogChannel].delta.analog=ad[analogChannel].maxcal.analog - ad[analogChannel].mincal.analog;
+    ad[analogChannel].diff.digital=AD_SAMPLECNT * ad[analogChannel].delta.digital / ad[analogChannel].delta.analog * ad[analogChannel].diff.analog;
   }
 }
 
@@ -348,30 +362,60 @@ int readAdChannels(struct ad *ad, int cnt)
   return 0;
 }
 
+boolean chkAdTimeouts(struct ad *ad, int cnt, time_t ts, boolean advance)
+{
+  time_t timeout=measTimeout;
+  boolean ret=false;
+
+  if (advance)
+    timeout -= 300;
+  for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
+    if (ts-ad[analogChannel].last_send > timeout) {
+      ad[analogChannel].flags |= FLAGS_DATACHANGE;
+      ret=true;
+    }
+  }
+  return ret;
+}
+
+
+boolean chkAdChange(struct ad *ad, int cnt)
+{
+  boolean ret=false;
+  int digital=0;
+
+  for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
+    digital = ad[analogChannel].measured.digital;
+    if ((abs(digital - ad[analogChannel].prev.digital)) > ad[analogChannel].diff.digital) {
+      ad[analogChannel].flags |= FLAGS_DATACHANGE;
+      ret=true;
+    }
+  }
+  return ret;
+}
+
+
+
 int calcAdChannels(struct ad *ad, int cnt)
 {
   int digital=0;
   int ddelta;
   float adelta;
-  int ts=now();
-  bool timeout=false;
+  time_t ts=now();
 
   for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
-    digital = ad[analogChannel].measured.digital / AD_SAMPLECNT;
-    // inter- and extrapolation
-    ddelta=ad[analogChannel].delta.digital ;
-    adelta=ad[analogChannel].delta.analog;
+    if (ad[analogChannel].flags & FLAGS_DATACHANGE) {
+      digital = ad[analogChannel].measured.digital / AD_SAMPLECNT;
+      // inter- and extrapolation
+      ddelta=ad[analogChannel].delta.digital;
+      adelta=ad[analogChannel].delta.analog;
 
-    ad[analogChannel].measured.analog  = ad[analogChannel].mincal.analog +
-      (digital - ad[analogChannel].mincal.digital) * adelta / ddelta;
+      ad[analogChannel].measured.analog  = ad[analogChannel].mincal.analog +
+	(digital - ad[analogChannel].mincal.digital) * adelta / ddelta;
 
-    ad[analogChannel].flags &= ~FLAGS_DATACHANGE;
-    timeout=(ts-ad[analogChannel].last_send > measTimeout);
-    if (timeout || ((abs(ad[analogChannel].measured.analog - ad[analogChannel].prev.analog)) > ad[analogChannel].diff.analog)) {
-      ad[analogChannel].prev.analog = ad[analogChannel].measured.analog;
-      ad[analogChannel].prev.digital = digital ;
-      ad[analogChannel].flags |= FLAGS_DATACHANGE;
       ad[analogChannel].last_send=ts;
+      ad[analogChannel].prev.analog = ad[analogChannel].measured.analog;
+      ad[analogChannel].prev.digital = ad[analogChannel].measured.digital;
     }
   }
   return 0;
@@ -379,6 +423,8 @@ int calcAdChannels(struct ad *ad, int cnt)
 
 void resetAdChannels(struct ad *ad, int cnt)
 {
-  for (int analogChannel = 0; analogChannel < cnt; analogChannel++) 
+  for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
+    ad[analogChannel].flags &= ~FLAGS_DATACHANGE;
     ad[analogChannel].measured.digital = 0;
+  }
 }

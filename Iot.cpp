@@ -1,5 +1,5 @@
 /*
- Iot.h - construct messages to be sent to at&t:s m2x iot cloud
+ Iot.cpp - construct messages to be sent to at&t:s m2x iot cloud
  Teppo Kallio, 2014
 */
 
