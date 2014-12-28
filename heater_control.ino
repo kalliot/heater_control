@@ -12,6 +12,7 @@
 
 #define AD_SAMPLECNT 10
 #define FLAGS_DATACHANGE 0x01
+#define FLAGS_TIMEOUT 0x02
 
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 // mx2 credentials are stored with a tcpip config connection
@@ -146,6 +147,7 @@ void processSensors()
 {
   static int cnt=0;
   boolean timeouts=false;
+  boolean cntTimeouts,cntChanges;
   boolean changes=false;
   time_t ts=now();
   int chcnt=(sizeof(adArr) / sizeof(struct ad));
@@ -156,13 +158,18 @@ void processSensors()
   cnt++;
   if ((cnt % AD_SAMPLECNT)==0) {
     sched.oscillate(13,150, LOW,2);
-    timeouts=chkAdTimeouts(adArr,chcnt, ts, false);
+    cntTimeouts=chkCntTimeouts(ts,false);
+    cntChanges=chkCntChanged();
+    timeouts=chkAdTimeouts(adArr,chcnt, ts, (cntTimeouts || cntChanges));
     changes=chkAdChange(adArr,chcnt);
-    // if there is something to send, advance other channel sends
+    // if there is something to send, advance other channel sends,
     // in case they are enough near with timeout. This way we get
-    // more values to send in same packet.
-    if (timeouts || changes)
+    // more values to send in same m2x packet.
+    if (timeouts || changes) {
+      if (!cntTimeouts)
+	chkCntTimeouts(ts,true);
       chkAdTimeouts(adArr,chcnt, ts, true);
+    }
     calcAdChannels(adArr,chcnt);
     calcKw();
     sendM2X(adArr,chcnt);
@@ -246,6 +253,44 @@ void cntPrepareForNext(int index,time_t ts)
   cntArr[index].prevsnd.analog=cntArr[index].measured.analog;
   cntArr[index].avg_samples=0;
   cntArr[index].avg_counter=0;
+  cntArr[index].flags &= ~FLAGS_DATACHANGE;
+  cntArr[index].flags &= ~FLAGS_TIMEOUT;
+}
+
+boolean chkCntTimeouts(time_t ts,boolean advance)
+{
+  boolean ret=false;
+  int timeout;
+
+  timeout= measTimeout;
+  if (advance)
+    timeout-=300;
+
+  for (int i=0;i<(sizeof(cntArr) / sizeof(struct cnt)); i++) {
+    if (ts-cntArr[i].last_send > timeout) {
+      cntArr[i].flags |= FLAGS_TIMEOUT;
+      ret=true;
+    }
+  }
+  return ret;
+}
+
+boolean chkCntChanged()
+{
+  float limit;
+  bool changed;
+  float diff;
+  boolean ret=false;
+
+  for (int i=0;i<(sizeof(cntArr) / sizeof(struct cnt));i++) {
+    diff = abs(cntArr[i].measured.analog-cntArr[i].prevsnd.analog);
+    limit = cntArr[i].diff.analog * (1.0 + cntArr[i].measured.analog * cntArr[i].diff_factor.analog);
+    if (diff > limit) {
+      cntArr[i].flags |= FLAGS_DATACHANGE;
+      ret=true;
+    }
+  }
+  return ret;
 }
 
 void sendM2X(struct ad *ad,int cnt)
@@ -253,9 +298,8 @@ void sendM2X(struct ad *ad,int cnt)
   char chbuf[22];
   char prevtime[22];
   int response;
-  boolean timeout=false;
   time_t ts;
-  boolean sendingad=false;
+  float val;
 
   ts=now();
   buildTime(ts,chbuf);
@@ -267,51 +311,41 @@ void sendM2X(struct ad *ad,int cnt)
       iot.name(ad[chan].name);
       iot.addValue(ad[chan].measured.analog,chbuf);
       iot.next();
-      sendingad=true;
     }
   }
 
   // counter build part
-  if (sendingad) // if already sending ad values, add counters a bit earlier to same packet
-    timeout=(ts-cntArr[0].last_send > measTimeout-300);
-  else
-    timeout=(ts-cntArr[0].last_send > measTimeout);
-  float diff=abs(cntArr[0].measured.analog-cntArr[0].prevsnd.analog);
-  bool changed;
-  float limit;
-  float val;
+  for (int i=0;i<(sizeof(cntArr) / sizeof(struct cnt));i++) {
+    if (cntArr[i].flags & FLAGS_DATACHANGE) {
+      if (ts-cntArr[i].last_send > 30) { // value changed and there is more than 30 seconds after prev
+	if (cntArr[i].avg_samples > 3) {
+	  // calculate average from previous samples
+	  val=(cntArr[i].avg_counter / cntArr[i].avg_samples) / (cntArr[i].scale.digital * cntArr[i].scale.analog);
+	}
+	else
+	  val=cntArr[i].prev.analog;
 
-  limit = cntArr[0].diff.analog * (1.0 + cntArr[0].measured.analog * cntArr[0].diff_factor.analog);
-  changed=(diff > limit);
-  if (changed) {
-    if (ts-cntArr[0].last_send > 30) {
-      if (cntArr[0].avg_samples > 3) {
-        // calculate average from previous samples
-	val=(cntArr[0].avg_counter / cntArr[0].avg_samples) / (cntArr[0].scale.digital * cntArr[0].scale.analog);
+	buildTime(ts-10,prevtime);
+	iot.name(cntArr[i].name);
+	iot.addValue(val,prevtime);
+	iot.addValue(cntArr[i].measured.analog,chbuf);
+	iot.next();
+	cntPrepareForNext(i,ts);
       }
-      else
-	val=cntArr[0].prev.analog;
-
-      buildTime(ts-10,prevtime);
-      iot.name(cntArr[0].name);
-      iot.addValue(val,prevtime);
-      iot.addValue(cntArr[0].measured.analog,chbuf);
-      iot.next();
-      cntPrepareForNext(0,ts);
-     }
-    else {
-      iot.name(cntArr[0].name);
-      iot.addValue(cntArr[0].measured.analog,chbuf);
-      iot.next();
-      cntPrepareForNext(0,ts);
+      else { // value changed quicly after prev
+	iot.name(cntArr[i].name);
+	iot.addValue(cntArr[i].measured.analog,chbuf);
+	iot.next();
+	cntPrepareForNext(i,ts);
+      }
     }
-  }
-  else if (timeout) {
-    val=(cntArr[0].avg_counter / cntArr[0].avg_samples) / (cntArr[0].scale.digital * cntArr[0].scale.analog); 
-    iot.name(cntArr[0].name);
-    iot.addValue(val,chbuf);
-    iot.next();
-    cntPrepareForNext(0,ts);
+    else if (cntArr[i].flags & FLAGS_TIMEOUT) { // no big changes, only timeout
+      val=(cntArr[i].avg_counter / cntArr[i].avg_samples) / (cntArr[i].scale.digital * cntArr[i].scale.analog);
+      iot.name(cntArr[i].name);
+      iot.addValue(val,chbuf);
+      iot.next();
+      cntPrepareForNext(i,ts);
+    }
   }
 
 
