@@ -222,7 +222,7 @@ void checkEthernet()
   }
 }
 
-// converto to string and add preceeding zero, if needed
+// convert to string and add preceeding zero, if needed
 String len2(int val)
 {
   if (val>9)
@@ -293,13 +293,20 @@ boolean chkCntChanged()
   return ret;
 }
 
+float cntAvg(int index)
+{
+  return (cntArr[index].avg_counter / cntArr[index].avg_samples) / 
+         (cntArr[index].scale.digital * cntArr[index].scale.analog);
+}
+
 void sendM2X(struct ad *ad,int cnt)
 {
   char chbuf[22];
   char prevtime[22];
   int response;
   time_t ts;
-  float val;
+  float currval;
+  boolean added=false;
 
   ts=now();
   buildTime(ts,chbuf);
@@ -317,32 +324,19 @@ void sendM2X(struct ad *ad,int cnt)
   // counter build part
   for (int i=0;i<(sizeof(cntArr) / sizeof(struct cnt));i++) {
     if (cntArr[i].flags & FLAGS_DATACHANGE) {
-      if (ts-cntArr[i].last_send > 30) { // value changed and there is more than 30 seconds after prev
-	if (cntArr[i].avg_samples > 3) {
-	  // calculate average from previous samples
-	  val=(cntArr[i].avg_counter / cntArr[i].avg_samples) / (cntArr[i].scale.digital * cntArr[i].scale.analog);
-	}
-	else
-	  val=cntArr[i].prev.analog;
-
-	buildTime(ts-10,prevtime);
-	iot.name(cntArr[i].name);
-	iot.addValue(val,prevtime);
-	iot.addValue(cntArr[i].measured.analog,chbuf);
-	iot.next();
-	cntPrepareForNext(i,ts);
+      if (ts-cntArr[i].last_send > 30) {                   // value changed and there is more than 30 seconds after prev,
+	iot.addValue(cntAvg(i),buildTime(ts-10,prevtime)); // so this time we'll send two samples.
       }
-      else { // value changed quicly after prev
-	iot.name(cntArr[i].name);
-	iot.addValue(cntArr[i].measured.analog,chbuf);
-	iot.next();
-	cntPrepareForNext(i,ts);
-      }
+      currval=cntArr[i].measured.analog;
+      added=true;
     }
     else if (cntArr[i].flags & FLAGS_TIMEOUT) { // no big changes, only timeout
-      val=(cntArr[i].avg_counter / cntArr[i].avg_samples) / (cntArr[i].scale.digital * cntArr[i].scale.analog);
+      currval=cntAvg(i);
+      added=true;
+    }
+    if (added) {
       iot.name(cntArr[i].name);
-      iot.addValue(val,chbuf);
+      iot.addValue(currval,chbuf);
       iot.next();
       cntPrepareForNext(i,ts);
     }
