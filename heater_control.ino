@@ -22,7 +22,8 @@ char m2xKey[33] = ""; // Your M2X access key
 
 // interrupt counter is not bound very elegantly to
 // cntArr, I think about this later.
-volatile unsigned int _kwCounter = 0;   // counter for the number of interrupts
+int volatile *_counters;
+
 
 IPAddress ip(192,168,1,177);
 IPAddress gateway(192,168,1, 1);
@@ -50,12 +51,13 @@ struct ad {
 
 
 struct cnt {
-  unsigned int counter;
+  unsigned int irqno;
   char *name;
   int flags;
   time_t last_send;
   long avg_counter;
   int avg_samples;
+  void (* irqh)(void);
   struct dig2a prev;
   struct dig2a prevsnd;
   struct dig2a diff;
@@ -76,8 +78,9 @@ struct ad adArr[]= {          //prev   dif    min       max         meas    delt
 
 // counters are kept in array, this for preparing to have more of them.
 
-struct cnt cntArr[] = {         //prev prevsnd    diff   factor  scale  measured
-  {0,"electricity",  0,0,0,0,     0,0.0, 0,0.0,   0,0.1, 0,0.55, 50,1.0,  0,0.0}
+struct cnt cntArr[] = {                //prev prevsnd    diff   factor  scale  measured
+  { 1,"electricity", 0,0,0,0,irqh0,     0,0.0, 0,0.0,   0,0.1, 0,0.55, 50,1.0,  0,0.0},
+  {-1,"water",       0,0,0,0,irqh1,     0,0.0, 0,0.0,   0,0.1, 0,0.55, 50,1.0,  0,0.0}
 };
 
 Timer sched;
@@ -128,8 +131,13 @@ void setup() {
   setSyncProvider(getNtpTime);
   sched.every(1000,processSensors);
   sched.every(200,checkEthernet);
-  cntArr[0].last_send=now();
-  attachInterrupt(1, elmeter, CHANGE);
+  _counters=(int *) malloc(sizeof(int) * sizeof(cntArr) / sizeof(struct cnt));
+  for (int i=0;i<(sizeof(cntArr) / sizeof(struct cnt));i++) {
+    if (cntArr[i].irqno!=-1) {
+      cntArr[i].last_send=now();
+      attachInterrupt(cntArr[i].irqno,cntArr[i].irqh, CHANGE);
+    }
+  }
 }
 
 void loop()
@@ -138,9 +146,14 @@ void loop()
   refreshEvents();
 }
 
-void elmeter()
+void irqh0()
 {
-  _kwCounter++;
+  _counters[0]++;
+}
+
+void irqh1()
+{
+  _counters[1]++;
 }
 
 void processSensors()
@@ -171,28 +184,32 @@ void processSensors()
       chkAdTimeouts(adArr,chcnt, ts, true);
     }
     calcAdChannels(adArr,chcnt);
-    calcKw();
+    calcCnt();
     sendM2X(adArr,chcnt);
     resetAdChannels(adArr,chcnt);
   }
 }
 
 
-void calcKw()
+void calcCnt()
 {
   unsigned int tmpCnt;
 
-  noInterrupts();
-  tmpCnt=_kwCounter;
-  interrupts();
-  cntArr[0].prev.analog=cntArr[0].measured.analog;
-  cntArr[0].measured.analog = (tmpCnt-cntArr[0].prev.digital) / (cntArr[0].scale.digital * cntArr[0].scale.analog); 
-  if (cntArr[0].measured.analog > 20.0) {  // debug code. Sometimes during development a very big kw is sent to iot host.
-    cntArr[0].measured.analog = 20.0;
+  for (int i=0;i<(sizeof(cntArr) / sizeof(struct cnt));i++) {
+    if (cntArr[i].irqno!=-1) {
+      noInterrupts();
+      tmpCnt=_counters[i];
+      interrupts();
+      cntArr[i].prev.analog=cntArr[i].measured.analog;
+      cntArr[i].measured.analog = (tmpCnt-cntArr[i].prev.digital) / (cntArr[i].scale.digital * cntArr[i].scale.analog); 
+      if (cntArr[i].measured.analog > 20.0) {  // debug code. Sometimes during development a very big kw is sent to iot host.
+	cntArr[i].measured.analog = 20.0;
+      }
+      cntArr[i].avg_counter+=tmpCnt-cntArr[i].prev.digital;
+      cntArr[i].avg_samples++;
+      cntArr[i].prev.digital=tmpCnt;
+    }
   }
-  cntArr[0].avg_counter+=tmpCnt-cntArr[0].prev.digital;
-  cntArr[0].avg_samples++;
-  cntArr[0].prev.digital=tmpCnt;
 }
 
 void checkEthernet()
@@ -267,9 +284,11 @@ boolean chkCntTimeouts(time_t ts,boolean advance)
     timeout-=300;
 
   for (int i=0;i<(sizeof(cntArr) / sizeof(struct cnt)); i++) {
-    if (ts-cntArr[i].last_send > timeout) {
-      cntArr[i].flags |= FLAGS_TIMEOUT;
-      ret=true;
+    if (cntArr[i].irqno!=-1) {
+      if (ts-cntArr[i].last_send > timeout) {
+	cntArr[i].flags |= FLAGS_TIMEOUT;
+	ret=true;
+      }
     }
   }
   return ret;
@@ -283,11 +302,13 @@ boolean chkCntChanged()
   boolean ret=false;
 
   for (int i=0;i<(sizeof(cntArr) / sizeof(struct cnt));i++) {
-    diff = abs(cntArr[i].measured.analog-cntArr[i].prevsnd.analog);
-    limit = cntArr[i].diff.analog * (1.0 + cntArr[i].measured.analog * cntArr[i].diff_factor.analog);
-    if (diff > limit) {
-      cntArr[i].flags |= FLAGS_DATACHANGE;
-      ret=true;
+    if (cntArr[i].irqno!=-1) {
+      diff = abs(cntArr[i].measured.analog-cntArr[i].prevsnd.analog);
+      limit = cntArr[i].diff.analog * (1.0 + cntArr[i].measured.analog * cntArr[i].diff_factor.analog);
+      if (diff > limit) {
+	cntArr[i].flags |= FLAGS_DATACHANGE;
+	ret=true;
+      }
     }
   }
   return ret;
@@ -323,22 +344,24 @@ void sendM2X(struct ad *ad,int cnt)
 
   // counter build part
   for (int i=0;i<(sizeof(cntArr) / sizeof(struct cnt));i++) {
-    if (cntArr[i].flags & FLAGS_DATACHANGE) {
-      if (ts-cntArr[i].last_send > 30) {                   // value changed and there is more than 30 seconds after prev,
-	iot.addValue(cntAvg(i),buildTime(ts-10,prevtime)); // so this time we'll send two samples.
+    if (cntArr[i].irqno!=-1) {
+      if (cntArr[i].flags & FLAGS_DATACHANGE) {
+	if (ts-cntArr[i].last_send > 30) {                   // value changed and there is more than 30 seconds after prev,
+	  iot.addValue(cntAvg(i),buildTime(ts-10,prevtime)); // so this time we'll send two samples.
+	}
+	currval=cntArr[i].measured.analog;
+	added=true;
       }
-      currval=cntArr[i].measured.analog;
-      added=true;
-    }
-    else if (cntArr[i].flags & FLAGS_TIMEOUT) { // no big changes, only timeout
-      currval=cntAvg(i);
-      added=true;
-    }
-    if (added) {
-      iot.name(cntArr[i].name);
-      iot.addValue(currval,chbuf);
-      iot.next();
-      cntPrepareForNext(i,ts);
+      else if (cntArr[i].flags & FLAGS_TIMEOUT) { // no big changes, only timeout
+	currval=cntAvg(i);
+	added=true;
+      }
+      if (added) {
+	iot.name(cntArr[i].name);
+	iot.addValue(currval,chbuf);
+	iot.next();
+	cntPrepareForNext(i,ts);
+      }
     }
   }
 
