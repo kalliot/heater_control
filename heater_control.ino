@@ -14,6 +14,9 @@
 #define FLAGS_DATACHANGE 0x01
 #define FLAGS_TIMEOUT 0x02
 
+#define OUTIO_ACTIVE 0x01
+
+
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 // mx2 credentials are stored with a tcpip config connection
 // and saved to eeprom. check eepromsetup.ino
@@ -49,6 +52,10 @@ struct ad {
   struct dig2a delta;
 };
 
+struct variable {
+  char *name;
+  float value;
+};
 
 struct cnt {
   unsigned int irqno;
@@ -64,6 +71,30 @@ struct cnt {
   struct dig2a diff_factor;
   struct dig2a scale;
   struct dig2a measured;
+};
+
+
+struct outIo {
+  int port;
+  char *name;
+  int state;
+  time_t last_change;
+};
+
+// simple conditions for logical operations.
+struct condition {
+  int id;
+  struct ad *source;
+  char op;
+  dig2a value;
+  struct outIo *target;
+  int state;
+};
+
+
+struct variable variables[]= {
+  {"boilTemp",60.0},
+  {"radiatorTemp",20.0}
 };
 
 // in future this table shall be stored mainly in eeprom.
@@ -83,6 +114,19 @@ struct cnt cntArr[] = {                //prev prevsnd    diff   factor  scale  m
   {-1,"water",       0,0,0,0,irqh1,     0,0.0, 0,0.0,   0,0.1, 0,0.55, 50,1.0,  0,0.0}
 };
 
+// outIoArr has io ports for relay control.
+struct outIo outIoArr[] = {
+  {12,"burnerfeed",0,0}
+};
+
+// confitions are kept in array to have a possibility to configure them with tcp/ip telnet style commands
+// and to store them to eeprom.
+struct condition conditions[]= {
+  {0,&adArr[0],'<',0,24.4,&outIoArr[0],1}, // if boiler is under 24.4, turn burnerfeed to 1
+  {0,&adArr[0],'>',0,26.0,&outIoArr[0],0}  // if boiler is over 26, turn burnerfeed to 0
+};
+
+
 Timer sched;
 int measTimeout=1800;
 
@@ -99,6 +143,7 @@ void setup() {
 
   Serial.begin(9600);
   pinMode(13, OUTPUT);
+  pinMode(12, OUTPUT);
   Serial.println("Start");
   eepReadAll();
   // preparing for configurable channels.
@@ -190,6 +235,56 @@ void processSensors()
   }
 }
 
+void evaluateCondition(struct ad *source,time_t ts)
+{
+  float value;
+  float limit;
+
+  for (int i=0;i<sizeof(conditions) / sizeof(struct condition);i++) {
+    if (conditions[i].source == source) {
+      value=source->measured.analog;
+      limit=conditions[i].value.analog;
+      switch (conditions[i].op) {
+      case '<':
+	if (value < limit && conditions[i].target->state != conditions[i].state) {
+	  conditions[i].target->state = conditions[i].state;
+	  conditions[i].target->last_change = ts;
+	  digitalWrite(conditions[i].target->port,conditions[i].target->state);
+	  Serial.print(source->name);
+	  Serial.print(" is smaller than ");
+	  Serial.print(limit);
+          Serial.print(" turning ");
+	  Serial.print(conditions[i].target->name);
+	  Serial.print(" port [");
+	  Serial.print(conditions[i].target->port);
+	  Serial.print("] to ");
+	  Serial.println(conditions[i].state);
+	}
+	break;
+
+      case '>':
+	if (value > limit && conditions[i].target->state != conditions[i].state) {
+	  conditions[i].target->state = conditions[i].state;
+	  conditions[i].target->last_change = ts;
+	  digitalWrite(conditions[i].target->port,conditions[i].target->state);
+	  Serial.print(source->name);
+	  Serial.print(" is bigger than ");
+	  Serial.print(limit);
+          Serial.print(" turning ");
+	  Serial.print(conditions[i].target->name);
+	  Serial.print(" port [");
+	  Serial.print(conditions[i].target->port);
+	  Serial.print("] to ");
+	  Serial.println(conditions[i].state);
+	}
+	break;
+
+      default:
+	Serial.println("unknown conditional op");
+      }
+    }
+  }
+}
 
 void calcCnt()
 {
@@ -467,6 +562,7 @@ int calcAdChannels(struct ad *ad, int cnt)
       ad[analogChannel].last_send=ts;
       ad[analogChannel].prev.analog = ad[analogChannel].measured.analog;
       ad[analogChannel].prev.digital = ad[analogChannel].measured.digital;
+      evaluateCondition(&ad[analogChannel],ts);
     }
   }
   return 0;
