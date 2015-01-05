@@ -39,6 +39,11 @@ struct dig2a
   float analog;
 };
 
+struct variable {
+  char *name;
+  float value;
+};
+
 struct ad {
   int port;
   char *name;
@@ -50,11 +55,6 @@ struct ad {
   struct dig2a maxcal;
   struct dig2a measured;
   struct dig2a delta;
-};
-
-struct variable {
-  char *name;
-  float value;
 };
 
 struct cnt {
@@ -81,21 +81,29 @@ struct outIo {
   time_t last_change;
 };
 
-// simple conditions for logical operations.
+#define METHOD_TURNON      1
+#define METHOD_CHANGELIMIT 2
+
+// simple conditions for operations
 struct condition {
   int id;
   struct ad *source;
-  char op;
-  dig2a value;
-  struct outIo *target;
-  int state;
+  struct variable *limit;
+  struct variable *limit2;
+  void *target;
+  int method;
 };
 
 
 struct variable variables[]= {
-  {"boilTemp",60.0},
-  {"radiatorTemp",20.0}
+  {"boilTemp",      24.5},
+  {"boilHysteresis", 1.5},
+  {"boilReduced",   24.0},
+  {"hhboil",        25.0},
+  {"radiatorTemp",  20.0}
 };
+
+struct variable *origVariables;
 
 // in future this table shall be stored mainly in eeprom.
 // and so is it's size
@@ -122,8 +130,8 @@ struct outIo outIoArr[] = {
 // confitions are kept in array to have a possibility to configure them with tcp/ip telnet style commands
 // and to store them to eeprom.
 struct condition conditions[]= {
-  {0,&adArr[0],'<',0,24.4,&outIoArr[0],1}, // if boiler is under 24.4, turn burnerfeed to 1
-  {0,&adArr[0],'>',0,26.0,&outIoArr[0],0}  // if boiler is over 26, turn burnerfeed to 0
+  {0,&adArr[0],&variables[0],&variables[1],&outIoArr[0] ,1},  // start boiler if it is under 24.5, and off when it has reached 26.0
+  {1,&adArr[2],&variables[3],&variables[0],&variables[2],2}  // if hothousewater is under hhboil, then boilTemp should be boilReduced.
 };
 
 
@@ -146,6 +154,8 @@ void setup() {
   pinMode(12, OUTPUT);
   Serial.println("Start");
   eepReadAll();
+  origVariables=(struct variable *) malloc(sizeof(variables));
+  memcpy(origVariables,variables,sizeof(variables));
   // preparing for configurable channels.
   // in future the amount of channels will be specified with config
   // and this amount with channel names are saved to eeprom.
@@ -201,6 +211,18 @@ void irqh1()
   _counters[1]++;
 }
 
+
+int resetVariable(char *name)
+{
+  for (int i=0;i<sizeof(variables) / sizeof(struct variable);i++) {
+    if (!strcmp(variables[i].name,name)) {
+      variables[i].value=origVariables[i].value;
+      return 0;
+    }
+  }
+  return 1;
+}
+
 void processSensors()
 {
   static int cnt=0;
@@ -239,48 +261,50 @@ void evaluateCondition(struct ad *source,time_t ts)
 {
   float value;
   float limit;
+  float off;
+  struct outIo *targetIo;
+  struct variable *var;
+
 
   for (int i=0;i<sizeof(conditions) / sizeof(struct condition);i++) {
     if (conditions[i].source == source) {
       value=source->measured.analog;
-      limit=conditions[i].value.analog;
-      switch (conditions[i].op) {
-      case '<':
-	if (value < limit && conditions[i].target->state != conditions[i].state) {
-	  conditions[i].target->state = conditions[i].state;
-	  conditions[i].target->last_change = ts;
-	  digitalWrite(conditions[i].target->port,conditions[i].target->state);
-	  Serial.print(source->name);
-	  Serial.print(" is smaller than ");
-	  Serial.print(limit);
-          Serial.print(" turning ");
-	  Serial.print(conditions[i].target->name);
-	  Serial.print(" port [");
-	  Serial.print(conditions[i].target->port);
-	  Serial.print("] to ");
-	  Serial.println(conditions[i].state);
+      limit=conditions[i].limit->value;
+      switch (conditions[i].method) {
+      case METHOD_TURNON:
+	targetIo=(struct outIo *) conditions[i].target;
+	off=limit + conditions[i].limit2->value;
+	if (value < limit && targetIo->state == 0) {
+	  targetIo->state = 1;
+	  targetIo->last_change = ts;
+	  digitalWrite(targetIo->port,1);
+	}
+	else if (value > off && targetIo->state == 1 ) {
+	  targetIo->state = 0;
+	  targetIo->last_change = ts;
+	  digitalWrite(targetIo->port,0);
 	}
 	break;
 
-      case '>':
-	if (value > limit && conditions[i].target->state != conditions[i].state) {
-	  conditions[i].target->state = conditions[i].state;
-	  conditions[i].target->last_change = ts;
-	  digitalWrite(conditions[i].target->port,conditions[i].target->state);
-	  Serial.print(source->name);
-	  Serial.print(" is bigger than ");
-	  Serial.print(limit);
-          Serial.print(" turning ");
-	  Serial.print(conditions[i].target->name);
-	  Serial.print(" port [");
-	  Serial.print(conditions[i].target->port);
-	  Serial.print("] to ");
-	  Serial.println(conditions[i].state);
+      case METHOD_CHANGELIMIT:
+	var=(struct variable *) conditions[i].target;
+	if (value < limit) {
+	  conditions[i].limit2->value=var->value;
+	  Serial.print("changed ");
+	  Serial.print(conditions[i].limit2->name);
+	  Serial.print(" limit to ");
+	  Serial.print(conditions[i].limit2->value);
+          Serial.print(" = ");
+          Serial.println(var->name);
+	}
+	else {
+	  resetVariable(conditions[i].limit2->name);
+	  Serial.print("resetted ");
+	  Serial.print(conditions[i].limit2->name);
+	  Serial.print(" limit to ");
+	  Serial.println(conditions[i].limit2->value);
 	}
 	break;
-
-      default:
-	Serial.println("unknown conditional op");
       }
     }
   }
