@@ -101,8 +101,8 @@ struct variable variables[]= {
   {"boilHysteresis", 1.5},
   {"boilReduced",   24.0},
   {"hhboil",        25.0},
-  {"radiatorTemp",  22.0},
-  {"radiatorAdd",   20.0}
+  {"radiatorReq",   22.0}, // radiator requested temperature
+  {"radiatorAdd",   22.72}
 };
 
 struct variable *origVariables;
@@ -134,7 +134,7 @@ struct convert {
   int target;
 };
 
-struct convert radiatorTab[]={ -30,22, // ambient -30 -> radiator 42 (remember to add "radiatorAdd")
+struct convert radiatorTab[]={ -30,22, // ambient -30 -> radiator 44.72 (remember to add "radiatorAdd")
 			       -20,19, 
 			       -10,16, 
 			         0,13, 
@@ -168,7 +168,7 @@ struct convert radiatorTab[]={ -30,22, // ambient -30 -> radiator 42 (remember t
 struct condition conditions[]= {
   {0,&adArr[0],&variables[0],&variables[1],&outIoArr[0], METHOD_TURNON},       // start boiler if it is under 24.5, and off when it has reached 26.0
   {1,&adArr[2],&variables[3],&variables[0],&variables[2],METHOD_CHANGELIMIT},  // if hothousewater is under hhboil, then boilTemp should be boilReduced.
-  {2,&adArr[1],&variables[4],&variables[5],radiatorTab,  METHOD_TABLE}         // changes in ambient will change radiator with the help of radiatorAdd variable and radiatorTab table.
+  {2,&adArr[1],&variables[5],&variables[4],radiatorTab,  METHOD_TABLE}         // changes in ambient will change radiatorReq with the help of radiatorAdd variable and radiatorTab table.
 };
 
 
@@ -334,9 +334,9 @@ void evaluateCondition(struct ad *source,time_t ts)
 
       case METHOD_TABLE:
 	iTable=(struct convert *) conditions[i].target;
-	float adder=conditions[i].limit2->value;
-        float converted;
-	converted=resolveConversion(value,adder,iTable);
+	conditions[i].limit2->value=resolveConversion(value,conditions[i].limit->value,iTable);
+        Serial.print(" requested radiator temp is ");
+        Serial.println(conditions[i].limit2->value);
 	break;
       }
     }
@@ -351,6 +351,7 @@ float resolveConversion(float v,float adder,struct convert *ct)
 {
   struct convert *start;
   struct convert *stop;
+  float ret;
 
   for (int i=0; ct[i].source != 0xff; i++) {
     if (ct[i].source < v)
@@ -360,13 +361,8 @@ float resolveConversion(float v,float adder,struct convert *ct)
       break;
     }
   }
-  Serial.print("conversion for value ");
-  Serial.print(v);
-  Serial.print(" is ");
-  Serial.print(adder+start->target);
-  Serial.print(" - ");
-  Serial.println(adder+stop->target);
-  return 0.0;
+  ret = (adder + start->target) - ((v - start->source) / (stop->source - start->source) * (start->target - stop->target));
+  return ret;
 }
 
 void calcCnt()
