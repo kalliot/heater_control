@@ -83,6 +83,7 @@ struct outIo {
 
 #define METHOD_TURNON      1
 #define METHOD_CHANGELIMIT 2
+#define METHOD_TABLE       3
 
 // simple conditions for operations
 struct condition {
@@ -100,7 +101,8 @@ struct variable variables[]= {
   {"boilHysteresis", 1.5},
   {"boilReduced",   24.0},
   {"hhboil",        25.0},
-  {"radiatorTemp",  20.0}
+  {"radiatorTemp",  22.0},
+  {"radiatorAdd",   20.0}
 };
 
 struct variable *origVariables;
@@ -127,12 +129,48 @@ struct outIo outIoArr[] = {
   {12,"burnerfeed",0,0}
 };
 
-// confitions are kept in array to have a possibility to configure them with tcp/ip telnet style commands
-// and to store them to eeprom.
-struct condition conditions[]= {
-  {0,&adArr[0],&variables[0],&variables[1],&outIoArr[0] ,1},  // start boiler if it is under 24.5, and off when it has reached 26.0
-  {1,&adArr[2],&variables[3],&variables[0],&variables[2],2}  // if hothousewater is under hhboil, then boilTemp should be boilReduced.
+struct convert {
+  int source;
+  int target;
 };
+
+struct convert radiatorTab[]={ -30,22, // ambient -30 -> radiator 42 (remember to add "radiatorAdd")
+			       -20,19, 
+			       -10,16, 
+			         0,13, 
+			        10,10,
+			        20, 2,
+			       0xff,0xff}; // terminator
+
+/*
+ * METHOD_TURNON
+ * limit  - turn target on, if source drops below this limit
+ * limit2 - hysteresis, turn target off if source exceeds limit+hysteresis.
+ * target - (struct outIo), io port which should be turned on.
+ *
+ * METHOD_CHANGELIMIT
+ * limit  - if source drop below this, then modify limit2 variable
+ * limit2 - variable to be changed according to limit.
+ * target - what is the new value of limit2 if activated
+ *          note that this does not have any hysteresis. It is assumed the
+ *          logic, following limit2 variable has a hysteresis.
+ *          When this rule does not happen, the limit2 variable is returned
+ *          back to its original value (copied from origVariables).
+ *
+ * METHOD_TABLE
+ * limit  - variable to be modified according to table. Variables original value has no purpose.
+ * limit2 - value to be added after table calculations.
+ * target - table of values. table can be coarse, more specific results are interpolated.
+ *
+ * configurations are kept in array to have a possibility to configure them with tcp/ip telnet style commands
+ * and to store them to eeprom.
+ */
+struct condition conditions[]= {
+  {0,&adArr[0],&variables[0],&variables[1],&outIoArr[0], METHOD_TURNON},       // start boiler if it is under 24.5, and off when it has reached 26.0
+  {1,&adArr[2],&variables[3],&variables[0],&variables[2],METHOD_CHANGELIMIT},  // if hothousewater is under hhboil, then boilTemp should be boilReduced.
+  {2,&adArr[1],&variables[4],&variables[5],radiatorTab,  METHOD_TABLE}         // changes in ambient will change radiator with the help of radiatorAdd variable and radiatorTab table.
+};
+
 
 
 Timer sched;
@@ -264,7 +302,7 @@ void evaluateCondition(struct ad *source,time_t ts)
   float off;
   struct outIo *targetIo;
   struct variable *var;
-
+  struct convert *iTable;
 
   for (int i=0;i<sizeof(conditions) / sizeof(struct condition);i++) {
     if (conditions[i].source == source) {
@@ -288,26 +326,47 @@ void evaluateCondition(struct ad *source,time_t ts)
 
       case METHOD_CHANGELIMIT:
 	var=(struct variable *) conditions[i].target;
-	if (value < limit) {
+	if (value < limit) 
 	  conditions[i].limit2->value=var->value;
-	  Serial.print("changed ");
-	  Serial.print(conditions[i].limit2->name);
-	  Serial.print(" limit to ");
-	  Serial.print(conditions[i].limit2->value);
-          Serial.print(" = ");
-          Serial.println(var->name);
-	}
-	else {
+	else 
 	  resetVariable(conditions[i].limit2->name);
-	  Serial.print("resetted ");
-	  Serial.print(conditions[i].limit2->name);
-	  Serial.print(" limit to ");
-	  Serial.println(conditions[i].limit2->value);
-	}
+	break;
+
+      case METHOD_TABLE:
+	iTable=(struct convert *) conditions[i].target;
+	float adder=conditions[i].limit2->value;
+        float converted;
+	converted=resolveConversion(value,adder,iTable);
 	break;
       }
     }
   }
+}
+
+
+/* find boundings from conversion table
+ * and convert / interpolate according to the table
+ */
+float resolveConversion(float v,float adder,struct convert *ct)
+{
+  struct convert *start;
+  struct convert *stop;
+
+  for (int i=0; ct[i].source != 0xff; i++) {
+    if (ct[i].source < v)
+      start=&ct[i];
+    else {
+      stop=&ct[i];
+      break;
+    }
+  }
+  Serial.print("conversion for value ");
+  Serial.print(v);
+  Serial.print(" is ");
+  Serial.print(adder+start->target);
+  Serial.print(" - ");
+  Serial.println(adder+stop->target);
+  return 0.0;
 }
 
 void calcCnt()
