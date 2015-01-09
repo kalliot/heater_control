@@ -81,9 +81,10 @@ struct outIo {
   time_t last_change;
 };
 
-#define METHOD_TURNON      1
-#define METHOD_CHANGELIMIT 2
-#define METHOD_TABLE       3
+#define METHOD_TURNON          1
+#define METHOD_CHANGELIMIT     2
+#define METHOD_TABLE           3
+#define METHOD_TABLE_RECHECK   4
 
 // simple conditions for operations
 struct condition {
@@ -102,7 +103,8 @@ struct variable variables[]= {
   {"boilReduced",   24.0},
   {"hhboil",        25.0},
   {"radiatorReq",   22.0}, // radiator requested temperature
-  {"radiatorAdd",   22.72}
+  {"radiatorAdd",   23.0},
+  {"null",          0.0}
 };
 
 struct variable *origVariables;
@@ -110,10 +112,10 @@ struct variable *origVariables;
 // in future this table shall be stored mainly in eeprom.
 // and so is it's size
 struct ad adArr[]= {          //prev   dif    min       max         meas    delta
-  {2,"boiler",       0,0,     0,0.0, 0,0.5, 174,21.0, 935, 100.0,  0,0.0,  0,0.0},
-  {3,"ambient",      0,0,     0,0.0, 0,0.3, 372,2.2,  964,  36.5,  0,0.0,  0,0.0},
-  {4,"hothousewater",0,0,     0,0.0, 0,0.5, 7,  21.0, 1023,100.0,  0,0.0,  0,0.0},
-  {5,"radiator",     0,0,     0,0.0, 0,0.3, 7,  21.0, 539,  36.5,  0,0.0,  0,0.0}
+  {2,"boiler",       0,0,     0,0.0, 0,0.5, 174,21.0, 935, 100.0,  0,-273.0,  0,0.0},
+  {3,"ambient",      0,0,     0,0.0, 0,0.3, 372,2.2,  964,  36.5,  0,-273.0,  0,0.0},
+  {4,"hothousewater",0,0,     0,0.0, 0,0.5, 7,  21.0, 1023,100.0,  0,-273.0,  0,0.0},
+  {5,"radiator",     0,0,     0,0.0, 0,0.3, 7,  21.0, 539,  36.5,  0,-273.0,  0,0.0}
 };
 
 
@@ -126,7 +128,9 @@ struct cnt cntArr[] = {                //prev prevsnd    diff   factor  scale  m
 
 // outIoArr has io ports for relay control.
 struct outIo outIoArr[] = {
-  {12,"burnerfeed",0,0}
+  {12,"burnerfeed",0,0},
+  {30,"shuntUp",0,0},
+  {31,"shuntDn",0,0}
 };
 
 struct convert {
@@ -168,13 +172,15 @@ struct convert radiatorTab[]={ -30,22, // ambient -30 -> radiator 44.72 (remembe
 struct condition conditions[]= {
   {0,&adArr[0],&variables[0],&variables[1],&outIoArr[0], METHOD_TURNON},       // start boiler if it is under 24.5, and off when it has reached 26.0
   {1,&adArr[2],&variables[3],&variables[0],&variables[2],METHOD_CHANGELIMIT},  // if hothousewater is under hhboil, then boilTemp should be boilReduced.
-  {2,&adArr[1],&variables[5],&variables[4],radiatorTab,  METHOD_TABLE}         // changes in ambient will change radiatorReq with the help of radiatorAdd variable and radiatorTab table.
+  {2,&adArr[1],&variables[5],&variables[4],radiatorTab,  METHOD_TABLE},        // changes in ambient will change radiatorReq with the help of radiatorAdd variable and radiatorTab table.
+  {3,&adArr[3],&variables[5],&variables[4],radiatorTab,  METHOD_TABLE_RECHECK} // changes in radiator will re-check radiatorReq.
 };
 
 
 
 Timer sched;
 int measTimeout=1800;
+int shuntTimer=-1;
 
 EthernetClient client;
 M2XStreamClient m2xClient(&client, m2xKey);
@@ -190,6 +196,8 @@ void setup() {
   Serial.begin(9600);
   pinMode(13, OUTPUT);
   pinMode(12, OUTPUT);
+  pinMode(30, OUTPUT);
+  pinMode(31, OUTPUT);
   Serial.println("Start");
   eepReadAll();
   origVariables=(struct variable *) malloc(sizeof(variables));
@@ -337,10 +345,45 @@ void evaluateCondition(struct ad *source,time_t ts)
 	conditions[i].limit2->value=resolveConversion(value,conditions[i].limit->value,iTable);
         Serial.print(" requested radiator temp is ");
         Serial.println(conditions[i].limit2->value);
+      case METHOD_TABLE_RECHECK:
+	float radReq=conditions[i].limit2->value;
+	float radiator=adArr[3].measured.analog;
+	float diff=radReq-radiator;
+
+	if (radiator==-273) // in startup this is -273 = 0 kelvin.
+	  return;
+	if (shuntTimer != -1) {
+	  sched.stop(shuntTimer);
+	  shuntTimer=-1;
+	}
+	if (diff > 0.3) {
+          Serial.print("diff=");
+	  Serial.print(diff);
+	  Serial.println(" starting shunt up timer");
+	  shuntTimer=sched.every(9000,shuntUp);
+	}
+	else if (diff < -0.3) {
+          Serial.print("diff=");
+	  Serial.print(diff);
+	  Serial.println(" Starting shunt down timer");
+	  shuntTimer=sched.every(9000,shuntDn);
+	}
+        else
+	  Serial.println("turned shunt timer off");
 	break;
       }
     }
   }
+}
+
+void shuntUp()
+{
+  sched.oscillate(30,3000,LOW,1);
+}
+
+void shuntDn()
+{
+  sched.oscillate(31,3000,LOW,1);
 }
 
 
