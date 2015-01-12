@@ -13,6 +13,7 @@
 #define AD_SAMPLECNT 10
 #define FLAGS_DATACHANGE 0x01
 #define FLAGS_TIMEOUT 0x02
+#define FLAGS_EVALUATE 0x04
 
 #define OUTIO_ACTIVE 0x01
 
@@ -93,6 +94,7 @@ struct condition {
   struct variable *limit;
   struct variable *limit2;
   void *target;
+  time_t last_chk;
   int method;
 };
 
@@ -103,7 +105,7 @@ struct variable variables[]= {
   {"boilReduced",   24.0},
   {"hhboil",        25.0},
   {"radiatorReq",   22.0}, // radiator requested temperature
-  {"radiatorAdd",   23.0},
+  {"radiatorAdd",   16.0},
   {"null",          0.0}
 };
 
@@ -138,13 +140,13 @@ struct convert {
   int target;
 };
 
-struct convert radiatorTab[]={ -30,22, // ambient -30 -> radiator 44.72 (remember to add "radiatorAdd")
-			       -20,19, 
-			       -10,16, 
-			         0,13, 
-			        10,10,
+struct convert radiatorTab[]={ -30,33, // ambient -30 -> radiator=radiatorAdd+this
+			       -20,31,
+			       -10,28,
+			         0,21,
+			        10,11,
 			        20, 2,
-			       0xff,0xff}; // terminator
+			        0xff,0xff}; // terminator
 
 /*
  * METHOD_TURNON
@@ -170,25 +172,24 @@ struct convert radiatorTab[]={ -30,22, // ambient -30 -> radiator 44.72 (remembe
  * and to store them to eeprom.
  */
 struct condition conditions[]= {
-  {0,&adArr[0],&variables[0],&variables[1],&outIoArr[0], METHOD_TURNON},       // start boiler if it is under 24.5, and off when it has reached 26.0
-  {1,&adArr[2],&variables[3],&variables[0],&variables[2],METHOD_CHANGELIMIT},  // if hothousewater is under hhboil, then boilTemp should be boilReduced.
-  {2,&adArr[1],&variables[5],&variables[4],radiatorTab,  METHOD_TABLE},        // changes in ambient will change radiatorReq with the help of radiatorAdd variable and radiatorTab table.
-  {3,&adArr[3],&variables[5],&variables[4],radiatorTab,  METHOD_TABLE_RECHECK} // changes in radiator will re-check radiatorReq.
+  {0,&adArr[0],&variables[0],&variables[1],&outIoArr[0], 0,METHOD_TURNON},       // start boiler if it is under 24.5, and off when it has reached 26.0
+  {1,&adArr[2],&variables[3],&variables[0],&variables[2],0,METHOD_CHANGELIMIT},  // if hothousewater is under hhboil, then boilTemp should be boilReduced.
+  {2,&adArr[1],&variables[5],&variables[4],radiatorTab,  0,METHOD_TABLE}        // changes in ambient will change radiatorReq with the help of radiatorAdd variable and radiatorTab table.
 };
 
 
 
 Timer sched;
 int measTimeout=1800;
-int shuntTimer=-1;
 
 EthernetClient client;
-M2XStreamClient m2xClient(&client, m2xKey);
+M2XStreamClient m2xClient(&client, m2xKey,idler);
 EthernetServer ipserver = EthernetServer(9000);
 EthernetClient ipclient;
 EthernetUDP Udp;
 unsigned int localPort = 8888;  // local port to listen for UDP packets
 Iot iot(&m2xClient);
+int adReadCnt;
 
 void setup() {
   int succ;
@@ -226,11 +227,13 @@ void setup() {
     }
     Serial.println();
   }
+  resetAdChannels(adArr,(sizeof(adArr) / sizeof(struct ad)));
   ipserver.begin();
   Udp.begin(localPort);
   setSyncInterval(7200);
   setSyncProvider(getNtpTime);
   sched.every(1000,processSensors);
+  sched.every(30000,evaluateConditions);
   sched.every(200,checkEthernet);
   _counters=(int *) malloc(sizeof(int) * sizeof(cntArr) / sizeof(struct cnt));
   for (int i=0;i<(sizeof(cntArr) / sizeof(struct cnt));i++) {
@@ -245,6 +248,11 @@ void loop()
 {
   sched.update();
   refreshEvents();
+}
+
+void idler()
+{
+  sched.update();
 }
 
 void irqh0()
@@ -271,18 +279,18 @@ int resetVariable(char *name)
 
 void processSensors()
 {
-  static int cnt=0;
+  //static unsigned int cnt=0;
   boolean timeouts=false;
   boolean cntTimeouts,cntChanges;
   boolean changes=false;
   time_t ts=now();
   int chcnt=(sizeof(adArr) / sizeof(struct ad));
 
-  if (!cnt)
-    resetAdChannels(adArr,chcnt);
-  readAdChannels(adArr,chcnt);
-  cnt++;
-  if ((cnt % AD_SAMPLECNT)==0) {
+  //if (!cnt)
+  //  resetAdChannels(adArr,chcnt);
+  //readAdChannels(adArr,chcnt);
+  //cnt++;
+  if (readAdChannels(adArr,chcnt)) {
     sched.oscillate(13,150, LOW,2);
     cntTimeouts=chkCntTimeouts(ts,false);
     cntChanges=chkCntChanged();
@@ -303,6 +311,7 @@ void processSensors()
   }
 }
 
+
 void evaluateCondition(struct ad *source,time_t ts)
 {
   float value;
@@ -314,6 +323,9 @@ void evaluateCondition(struct ad *source,time_t ts)
 
   for (int i=0;i<sizeof(conditions) / sizeof(struct condition);i++) {
     if (conditions[i].source == source) {
+      if (ts - conditions[i].last_chk < 30)
+	return;
+      conditions[i].last_chk = ts;
       value=source->measured.analog;
       limit=conditions[i].limit->value;
       switch (conditions[i].method) {
@@ -343,47 +355,35 @@ void evaluateCondition(struct ad *source,time_t ts)
       case METHOD_TABLE:
 	iTable=(struct convert *) conditions[i].target;
 	conditions[i].limit2->value=resolveConversion(value,conditions[i].limit->value,iTable);
-        Serial.print(" requested radiator temp is ");
-        Serial.println(conditions[i].limit2->value);
-      case METHOD_TABLE_RECHECK:
 	float radReq=conditions[i].limit2->value;
 	float radiator=adArr[3].measured.analog;
 	float diff=radReq-radiator;
 
 	if (radiator==-273) // in startup this is -273 = 0 kelvin.
 	  return;
-	if (shuntTimer != -1) {
-	  sched.stop(shuntTimer);
-	  shuntTimer=-1;
-	}
+
+	Serial.print("requested radiator temp is ");
+	Serial.print(radReq);
+	Serial.print(" diff is ");
+	Serial.println(diff);
+	long turntime=abs(diff) * 1000;
+        if (turntime > 10000)
+	  turntime=10000;
+	else if (turntime < 800)
+	  turntime=800;
 	if (diff > 0.3) {
-          Serial.print("diff=");
-	  Serial.print(diff);
-	  Serial.println(" starting shunt up timer");
-	  shuntTimer=sched.every(9000,shuntUp);
+          sched.oscillate(30,turntime,LOW,1);
 	}
 	else if (diff < -0.3) {
-          Serial.print("diff=");
-	  Serial.print(diff);
-	  Serial.println(" Starting shunt down timer");
-	  shuntTimer=sched.every(9000,shuntDn);
+          sched.oscillate(31,turntime,LOW,1);
 	}
-        else
-	  Serial.println("turned shunt timer off");
+        else {
+	  conditions[i].source->flags &= ~FLAGS_EVALUATE;
+	}
 	break;
       }
     }
   }
-}
-
-void shuntUp()
-{
-  sched.oscillate(30,3000,LOW,1);
-}
-
-void shuntDn()
-{
-  sched.oscillate(31,3000,LOW,1);
 }
 
 
@@ -404,6 +404,10 @@ float resolveConversion(float v,float adder,struct convert *ct)
       break;
     }
   }
+  Serial.print("target = ");
+  Serial.print(start->source);
+  Serial.print(" / ");
+  Serial.println(stop->source);
   ret = (adder + start->target) - ((v - start->source) / (stop->source - start->source) * (start->target - stop->target));
   return ret;
 }
@@ -623,10 +627,13 @@ int readAdChannels(struct ad *ad, int cnt)
   int ddelta;
   float adelta;
 
+  adReadCnt++;
   for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
     digital= analogRead(ad[analogChannel].port);
     ad[analogChannel].measured.digital += digital;
   }
+  if (adReadCnt==AD_SAMPLECNT)
+    return 1;
   return 0;
 }
 
@@ -640,6 +647,7 @@ boolean chkAdTimeouts(struct ad *ad, int cnt, time_t ts, boolean advance)
   for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
     if (ts-ad[analogChannel].last_send > timeout) {
       ad[analogChannel].flags |= FLAGS_DATACHANGE;
+      ad[analogChannel].flags |= FLAGS_EVALUATE;
       ret=true;
     }
   }
@@ -656,6 +664,7 @@ boolean chkAdChange(struct ad *ad, int cnt)
     digital = ad[analogChannel].measured.digital;
     if ((abs(digital - ad[analogChannel].prev.digital)) > ad[analogChannel].diff.digital) {
       ad[analogChannel].flags |= FLAGS_DATACHANGE;
+      ad[analogChannel].flags |= FLAGS_EVALUATE;
       ret=true;
     }
   }
@@ -673,7 +682,7 @@ int calcAdChannels(struct ad *ad, int cnt)
 
   for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
     if (ad[analogChannel].flags & FLAGS_DATACHANGE) {
-      digital = ad[analogChannel].measured.digital / AD_SAMPLECNT;
+      digital = ad[analogChannel].measured.digital / adReadCnt;
       // inter- and extrapolation
       ddelta=ad[analogChannel].delta.digital;
       adelta=ad[analogChannel].delta.analog;
@@ -690,10 +699,21 @@ int calcAdChannels(struct ad *ad, int cnt)
   return 0;
 }
 
+void evaluateConditions() {
+  int cnt=sizeof(adArr) / sizeof(struct ad);
+  time_t ts=now();
+
+  for (int i = 0; i < cnt; i++) {
+    if (adArr[i].flags & FLAGS_EVALUATE)
+      evaluateCondition(&adArr[i],ts);
+  }
+}
+
 void resetAdChannels(struct ad *ad, int cnt)
 {
   for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
     ad[analogChannel].flags &= ~FLAGS_DATACHANGE;
     ad[analogChannel].measured.digital = 0;
   }
+  adReadCnt=0;
 }
