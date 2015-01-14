@@ -43,6 +43,7 @@ struct dig2a
 struct variable {
   char *name;
   float value;
+  float origvalue;
 };
 
 struct ad {
@@ -100,16 +101,14 @@ struct condition {
 
 
 struct variable variables[]= {
-  {"boilTemp",      24.5},
-  {"boilHysteresis", 1.5},
-  {"boilReduced",   24.0},
-  {"hhboil",        25.0},
-  {"radiatorReq",   22.0}, // radiator requested temperature
-  {"radiatorAdd",   16.0},
-  {"null",          0.0}
+  {"boilTemp",      0,24.5},
+  {"boilHysteresis",0, 1.5},
+  {"boilReduced",   0,24.0},
+  {"hhboil",        0,25.0},
+  {"radiatorReq",   0,22.0}, // radiator requested temperature
+  {"radiatorAdd",   0,16.0},
+  {"null",          0,0.0 }
 };
-
-struct variable *origVariables;
 
 // in future this table shall be stored mainly in eeprom.
 // and so is it's size
@@ -161,7 +160,7 @@ struct convert radiatorTab[]={ -30,33, // ambient -30 -> radiator=radiatorAdd+th
  *          note that this does not have any hysteresis. It is assumed the
  *          logic, following limit2 variable has a hysteresis.
  *          When this rule does not happen, the limit2 variable is returned
- *          back to its original value (copied from origVariables).
+ *          back to its original value (copied from origvalue).
  *
  * METHOD_TABLE
  * limit  - variable to be modified according to table. Variables original value has no purpose.
@@ -201,8 +200,7 @@ void setup() {
   pinMode(31, OUTPUT);
   Serial.println("Start");
   eepReadAll();
-  origVariables=(struct variable *) malloc(sizeof(variables));
-  memcpy(origVariables,variables,sizeof(variables));
+  initVariables();
   // preparing for configurable channels.
   // in future the amount of channels will be specified with config
   // and this amount with channel names are saved to eeprom.
@@ -270,26 +268,28 @@ int resetVariable(char *name)
 {
   for (int i=0;i<sizeof(variables) / sizeof(struct variable);i++) {
     if (!strcmp(variables[i].name,name)) {
-      variables[i].value=origVariables[i].value;
+      variables[i].value=variables[i].origvalue;
       return 0;
     }
   }
   return 1;
 }
 
+void initVariables()
+{
+  for (int i=0;i<sizeof(variables) / sizeof(struct variable);i++) {
+    variables[i].value=variables[i].origvalue;
+  }
+}
+
 void processSensors()
 {
-  //static unsigned int cnt=0;
   boolean timeouts=false;
   boolean cntTimeouts,cntChanges;
   boolean changes=false;
   time_t ts=now();
   int chcnt=(sizeof(adArr) / sizeof(struct ad));
 
-  //if (!cnt)
-  //  resetAdChannels(adArr,chcnt);
-  //readAdChannels(adArr,chcnt);
-  //cnt++;
   if (readAdChannels(adArr,chcnt)) {
     sched.oscillate(13,150, LOW,2);
     cntTimeouts=chkCntTimeouts(ts,false);
@@ -353,8 +353,14 @@ void evaluateCondition(struct ad *source,time_t ts)
 	break;
 
       case METHOD_TABLE:
+	// calculate target
 	iTable=(struct convert *) conditions[i].target;
 	conditions[i].limit2->value=resolveConversion(value,conditions[i].limit->value,iTable);
+
+	// action, what to do when target has changed
+        // this should be separate function with selectable operands
+	// now its hard coded to handle io pins 30 and 31 and to compare target
+        // temperature against radiator.
 	float radReq=conditions[i].limit2->value;
 	float radiator=adArr[3].measured.analog;
 	float diff=radReq-radiator;
