@@ -69,7 +69,7 @@ int Iot::getRecCnt()
 
 int Iot::send(char *id)
 {
-  return _m2xsc->postMultiple(id, _pos, _streamNames,
+  return _m2xsc->postDeviceUpdates(id, _pos, _streamNames,
                               _counts, _ats, _values);
 }
 
