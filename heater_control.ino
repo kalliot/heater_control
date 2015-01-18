@@ -99,6 +99,22 @@ struct condition {
   int method;
 };
 
+struct bypassValve {
+  char *name;
+  struct ad *actualTemp;
+  time_t changed;
+  int up;
+  int dn;
+  float targetAd;
+  int timeMultiplier;
+  int latency;         // seconds, how long does it take after up, or down op the realise change in targetAd.
+  float hysteresis;
+  int minTurntime;     // milliseconds
+  int maxTurntime;     // milliseconds
+};
+
+
+
 
 struct variable variables[]= {
   {"boilTemp",      0,24.5},
@@ -119,6 +135,9 @@ struct ad adArr[]= {          //prev   dif    min       max         meas    delt
   {5,"radiator",     0,0,     0,0.0, 0,0.3, 7,  21.0, 539,  36.5,  0,-273.0,  0,0.0}
 };
 
+struct bypassValve bypasses[]= {
+  {"heating",&adArr[3],0,30,31,20.0,1000,30,0.3,800,10000}
+};
 
 // counters are kept in array, this for preparing to have more of them.
 
@@ -311,7 +330,6 @@ void processSensors()
   }
 }
 
-
 void evaluateCondition(struct ad *source,time_t ts)
 {
   float value;
@@ -356,40 +374,44 @@ void evaluateCondition(struct ad *source,time_t ts)
 	// calculate target
 	iTable=(struct convert *) conditions[i].target;
 	conditions[i].limit2->value=resolveConversion(value,conditions[i].limit->value,iTable);
-
-	// action, what to do when target has changed
-        // this should be separate function with selectable operands
-	// now its hard coded to handle io pins 30 and 31 and to compare target
-        // temperature against radiator.
 	float radReq=conditions[i].limit2->value;
-	float radiator=adArr[3].measured.analog;
-	float diff=radReq-radiator;
-
-	if (radiator==-273) // in startup this is -273 = 0 kelvin.
-	  return;
-
-	Serial.print("requested radiator temp is ");
-	Serial.print(radReq);
-	Serial.print(" diff is ");
-	Serial.println(diff);
-	long turntime=abs(diff) * 1000;
-        if (turntime > 10000)
-	  turntime=10000;
-	else if (turntime < 800)
-	  turntime=800;
-	if (diff > 0.3) {
-          sched.oscillate(30,turntime,LOW,1);
-	}
-	else if (diff < -0.3) {
-          sched.oscillate(31,turntime,LOW,1);
-	}
-        else {
+	if (!turnBypass(0,ts,radReq))
 	  conditions[i].source->flags &= ~FLAGS_EVALUATE;
-	}
+
 	break;
       }
     }
   }
+}
+
+
+
+int turnBypass(int bno,time_t ts,float requested)
+{
+  int ret=1;
+  float diff;
+  long turntime;
+
+  bypasses[bno].targetAd=requested;
+  if (bypasses[bno].actualTemp->measured.analog==-273) return ret;
+
+  diff = requested - bypasses[bno].actualTemp->measured.analog;
+  turntime=abs(diff) * bypasses[bno].timeMultiplier;
+  Serial.print(" diff is ");
+  Serial.println(diff);
+  bypasses[bno].changed=ts;
+  if (turntime > bypasses[bno].maxTurntime)
+    turntime=bypasses[bno].maxTurntime;
+  else if (turntime < bypasses[bno].minTurntime)
+    turntime=bypasses[bno].minTurntime;
+
+  if (diff > bypasses[bno].hysteresis)
+    sched.oscillate(bypasses[bno].up,turntime,LOW,1);
+  else if (diff < (-1.0 * bypasses[bno].hysteresis))
+    sched.oscillate(bypasses[bno].dn,turntime,LOW,1);
+  else
+    ret=0;
+  return ret;
 }
 
 
@@ -410,10 +432,6 @@ float resolveConversion(float v,float adder,struct convert *ct)
       break;
     }
   }
-  Serial.print("target = ");
-  Serial.print(start->source);
-  Serial.print(" / ");
-  Serial.println(stop->source);
   ret = (adder + start->target) - ((v - start->source) / (stop->source - start->source) * (start->target - stop->target));
   return ret;
 }
