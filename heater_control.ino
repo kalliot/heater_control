@@ -99,29 +99,31 @@ struct condition {
   int method;
 };
 
-struct bypassValve {
-  char *name;
-  struct ad *actualTemp;
-  time_t changed;
-  int up;
-  int dn;
-  float targetAd;
-  int timeMultiplier;
-  int latency;         // seconds, how long does it take after up, or down op the realise change in targetAd.
-  float hysteresis;
-  int minTurntime;     // milliseconds
-  int maxTurntime;     // milliseconds
+class bypassValve {
+ public:
+  bypassValve(char *name,float *actual,int up,int dn,int timeMultiplier,int latency,float sensitivity,int minTurnTime,int maxTurnTime);
+  void setTarget(float val);
+  int turnBypass(time_t ts);
+
+ private:
+  char *_name;
+  float *_actualTemp;
+  time_t _changed;
+  int _up;
+  int _dn;
+  float _targetTemp;
+  int _timeMultiplier;
+  int _latency;         // seconds, how long does it take after up, or down op the realise change in targetAd.
+  float _sensitivity;
+  int _minTurnTime;     // milliseconds
+  int _maxTurnTime;     // milliseconds
 };
-
-
-
 
 struct variable variables[]= {
   {"boilTemp",      0,24.5},
   {"boilHysteresis",0, 1.5},
   {"boilReduced",   0,24.0},
   {"hhboil",        0,25.0},
-  {"radiatorReq",   0,22.0}, // radiator requested temperature
   {"radiatorAdd",   0,16.0},
   {"null",          0,0.0 }
 };
@@ -135,9 +137,7 @@ struct ad adArr[]= {          //prev   dif    min       max         meas    delt
   {5,"radiator",     0,0,     0,0.0, 0,0.3, 7,  21.0, 539,  36.5,  0,-273.0,  0,0.0}
 };
 
-struct bypassValve bypasses[]= {
-  {"heating",&adArr[3],0,30,31,20.0,1000,30,0.3,800,10000}
-};
+bypassValve bp1("heating",&adArr[3].measured.analog,30,31,1000,30,0.3,800,10000);
 
 // counters are kept in array, this for preparing to have more of them.
 
@@ -192,7 +192,7 @@ struct convert radiatorTab[]={ -30,33, // ambient -30 -> radiator=radiatorAdd+th
 struct condition conditions[]= {
   {0,&adArr[0],&variables[0],&variables[1],&outIoArr[0], 0,METHOD_TURNON},       // start boiler if it is under 24.5, and off when it has reached 26.0
   {1,&adArr[2],&variables[3],&variables[0],&variables[2],0,METHOD_CHANGELIMIT},  // if hothousewater is under hhboil, then boilTemp should be boilReduced.
-  {2,&adArr[1],&variables[5],&variables[4],radiatorTab,  0,METHOD_TABLE}        // changes in ambient will change radiatorReq with the help of radiatorAdd variable and radiatorTab table.
+  {2,&adArr[1],&variables[4],NULL,radiatorTab,           0,METHOD_TABLE}         // changes in ambient will change radiatorReq with the help of radiatorAdd variable and radiatorTab table.
 };
 
 
@@ -250,7 +250,7 @@ void setup() {
   setSyncInterval(7200);
   setSyncProvider(getNtpTime);
   sched.every(1000,processSensors);
-  sched.every(30000,evaluateConditions);
+  sched.every(10000,evaluateConditions);
   sched.every(200,checkEthernet);
   _counters=(int *) malloc(sizeof(int) * sizeof(cntArr) / sizeof(struct cnt));
   for (int i=0;i<(sizeof(cntArr) / sizeof(struct cnt));i++) {
@@ -282,6 +282,55 @@ void irqh1()
   _counters[1]++;
 }
 
+bypassValve::bypassValve(char *name,float *actual,int up,int dn,int timeMultiplier,int latency,float sensitivity,int minTurnTime,int maxTurnTime) {
+  _name=name;
+  _actualTemp=actual;
+  _up=up;
+  _dn=dn;
+  _timeMultiplier=timeMultiplier;
+  _latency=latency;
+  _changed=0;
+  _sensitivity=sensitivity;
+  _minTurnTime=minTurnTime;
+  _maxTurnTime=maxTurnTime;
+  _targetTemp=-273;
+}
+
+void bypassValve::setTarget(float val) {
+  _targetTemp=val;
+}
+
+int bypassValve::turnBypass(time_t ts) {
+  int ret=1;
+  float diff;
+  long turntime;
+
+  if (*_actualTemp==-273) return ret;
+
+  if ((ts - _changed) > _latency-1)
+    _changed =ts;
+  else {
+    return ret;
+  }
+
+  diff = _targetTemp - *_actualTemp;
+  turntime=abs(diff) * _timeMultiplier;
+  Serial.print(" diff is ");
+  Serial.println(diff);
+
+  if (turntime > _maxTurnTime)
+    turntime=_maxTurnTime;
+  else if (turntime < _minTurnTime)
+    turntime=_minTurnTime;
+
+  if (diff > _sensitivity)
+    sched.oscillate(_up,turntime,LOW,1);
+  else if (diff < (-1.0 * _sensitivity))
+    sched.oscillate(_dn,turntime,LOW,1);
+  else
+    ret=0;
+  return ret;
+}
 
 int resetVariable(char *name)
 {
@@ -341,8 +390,6 @@ void evaluateCondition(struct ad *source,time_t ts)
 
   for (int i=0;i<sizeof(conditions) / sizeof(struct condition);i++) {
     if (conditions[i].source == source) {
-      if (ts - conditions[i].last_chk < 30)
-	return;
       conditions[i].last_chk = ts;
       value=source->measured.analog;
       limit=conditions[i].limit->value;
@@ -373,47 +420,15 @@ void evaluateCondition(struct ad *source,time_t ts)
       case METHOD_TABLE:
 	// calculate target
 	iTable=(struct convert *) conditions[i].target;
-	conditions[i].limit2->value=resolveConversion(value,conditions[i].limit->value,iTable);
-	float radReq=conditions[i].limit2->value;
-	if (!turnBypass(0,ts,radReq))
+	float target=resolveConversion(value,conditions[i].limit->value,iTable);
+	bp1.setTarget(target);
+	if (!bp1.turnBypass(ts))
 	  conditions[i].source->flags &= ~FLAGS_EVALUATE;
-
 	break;
       }
     }
   }
 }
-
-
-
-int turnBypass(int bno,time_t ts,float requested)
-{
-  int ret=1;
-  float diff;
-  long turntime;
-
-  bypasses[bno].targetAd=requested;
-  if (bypasses[bno].actualTemp->measured.analog==-273) return ret;
-
-  diff = requested - bypasses[bno].actualTemp->measured.analog;
-  turntime=abs(diff) * bypasses[bno].timeMultiplier;
-  Serial.print(" diff is ");
-  Serial.println(diff);
-  bypasses[bno].changed=ts;
-  if (turntime > bypasses[bno].maxTurntime)
-    turntime=bypasses[bno].maxTurntime;
-  else if (turntime < bypasses[bno].minTurntime)
-    turntime=bypasses[bno].minTurntime;
-
-  if (diff > bypasses[bno].hysteresis)
-    sched.oscillate(bypasses[bno].up,turntime,LOW,1);
-  else if (diff < (-1.0 * bypasses[bno].hysteresis))
-    sched.oscillate(bypasses[bno].dn,turntime,LOW,1);
-  else
-    ret=0;
-  return ret;
-}
-
 
 /* find boundings from conversion table
  * and convert / interpolate according to the table
