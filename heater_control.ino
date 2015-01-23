@@ -9,6 +9,7 @@
 #include <jsonlite.h>
 #include "M2XStreamClient.h"
 #include "Iot.h"
+#include "bypassvalve.h"
 
 #define AD_SAMPLECNT 10
 #define FLAGS_DATACHANGE 0x01
@@ -99,25 +100,6 @@ struct condition {
   int method;
 };
 
-class bypassValve {
- public:
-  bypassValve(char *name,float *actual,int up,int dn,int timeMultiplier,int latency,float sensitivity,int minTurnTime,int maxTurnTime);
-  void setTarget(float val);
-  int turnBypass(time_t ts);
-
- private:
-  char *_name;
-  float *_actualTemp;
-  time_t _changed;
-  int _up;
-  int _dn;
-  float _targetTemp;
-  int _timeMultiplier;
-  int _latency;         // seconds, how long does it take after up, or down op the realise change in targetAd.
-  float _sensitivity;
-  int _minTurnTime;     // milliseconds
-  int _maxTurnTime;     // milliseconds
-};
 
 struct variable variables[]= {
   {"boilTemp",      0,24.5},
@@ -137,7 +119,8 @@ struct ad adArr[]= {          //prev   dif    min       max         meas    delt
   {5,"radiator",     0,0,     0,0.0, 0,0.3, 7,  21.0, 539,  36.5,  0,-273.0,  0,0.0}
 };
 
-bypassValve bp1("heating",&adArr[3].measured.analog,30,31,1000,30,0.3,800,10000);
+Timer sched;
+bypassValve bp1(&sched,"heating",&adArr[3].measured.analog,30,31,1000,30,0.3,800,10000);
 
 // counters are kept in array, this for preparing to have more of them.
 
@@ -197,7 +180,7 @@ struct condition conditions[]= {
 
 
 
-Timer sched;
+
 int measTimeout=1800;
 
 EthernetClient client;
@@ -282,55 +265,6 @@ void irqh1()
   _counters[1]++;
 }
 
-bypassValve::bypassValve(char *name,float *actual,int up,int dn,int timeMultiplier,int latency,float sensitivity,int minTurnTime,int maxTurnTime) {
-  _name=name;
-  _actualTemp=actual;
-  _up=up;
-  _dn=dn;
-  _timeMultiplier=timeMultiplier;
-  _latency=latency;
-  _changed=0;
-  _sensitivity=sensitivity;
-  _minTurnTime=minTurnTime;
-  _maxTurnTime=maxTurnTime;
-  _targetTemp=-273;
-}
-
-void bypassValve::setTarget(float val) {
-  _targetTemp=val;
-}
-
-int bypassValve::turnBypass(time_t ts) {
-  int ret=1;
-  float diff;
-  long turntime;
-
-  if (*_actualTemp==-273) return ret;
-
-  if ((ts - _changed) > _latency-1)
-    _changed =ts;
-  else {
-    return ret;
-  }
-
-  diff = _targetTemp - *_actualTemp;
-  turntime=abs(diff) * _timeMultiplier;
-  Serial.print(" diff is ");
-  Serial.println(diff);
-
-  if (turntime > _maxTurnTime)
-    turntime=_maxTurnTime;
-  else if (turntime < _minTurnTime)
-    turntime=_minTurnTime;
-
-  if (diff > _sensitivity)
-    sched.oscillate(_up,turntime,LOW,1);
-  else if (diff < (-1.0 * _sensitivity))
-    sched.oscillate(_dn,turntime,LOW,1);
-  else
-    ret=0;
-  return ret;
-}
 
 int resetVariable(char *name)
 {
@@ -589,6 +523,8 @@ void sendM2X(struct ad *ad,int cnt)
   float currval;
   boolean added=false;
 
+  if (timeStatus() == timeNotSet)
+    return;
   ts=now();
   buildTime(ts,chbuf);
   iot.reset();
