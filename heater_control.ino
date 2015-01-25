@@ -10,6 +10,9 @@
 #include "M2XStreamClient.h"
 #include "Iot.h"
 #include "bypassvalve.h"
+#include "heatstore.h"
+#include "conversion.h"
+#include "adlimit.h"
 
 #define AD_SAMPLECNT 10
 #define FLAGS_DATACHANGE 0x01
@@ -41,11 +44,6 @@ struct dig2a
   float analog;
 };
 
-struct variable {
-  char *name;
-  float value;
-  float origvalue;
-};
 
 struct ad {
   int port;
@@ -84,30 +82,17 @@ struct outIo {
   time_t last_change;
 };
 
-#define METHOD_TURNON          1
-#define METHOD_CHANGELIMIT     2
-#define METHOD_TABLE           3
-#define METHOD_TABLE_RECHECK   4
+#define METHOD_HEATSTORE                 1
+#define METHOD_HEATSTORE_CHANGELIMIT     2
+#define METHOD_ANALOG                    3
+#define METHOD_ANALOG_RECHECK            4
 
 // simple conditions for operations
 struct condition {
   int id;
   struct ad *source;
-  struct variable *limit;
-  struct variable *limit2;
   void *target;
-  time_t last_chk;
   int method;
-};
-
-
-struct variable variables[]= {
-  {"boilTemp",      0,24.5},
-  {"boilHysteresis",0, 1.5},
-  {"boilReduced",   0,24.0},
-  {"hhboil",        0,25.0},
-  {"radiatorAdd",   0,16.0},
-  {"null",          0,0.0 }
 };
 
 // in future this table shall be stored mainly in eeprom.
@@ -119,8 +104,11 @@ struct ad adArr[]= {          //prev   dif    min       max         meas    delt
   {5,"radiator",     0,0,     0,0.0, 0,0.3, 7,  21.0, 539,  36.5,  0,-273.0,  0,0.0}
 };
 
+
 Timer sched;
+adlimit adl1(25.0);
 bypassValve bp1(&sched,"heating",&adArr[3].measured.analog,30,31,1000,30,0.3,800,10000);
+heatStore hs1(12,25,&adl1,24,1.5,30);
 
 // counters are kept in array, this for preparing to have more of them.
 
@@ -129,56 +117,25 @@ struct cnt cntArr[] = {                //prev prevsnd    diff   factor  scale  m
   {-1,"water",       0,0,0,0,irqh1,     0,0.0, 0,0.0,   0,0.1, 0,0.55, 50,1.0,  0,0.0}
 };
 
-// outIoArr has io ports for relay control.
-struct outIo outIoArr[] = {
-  {12,"burnerfeed",0,0},
-  {30,"shuntUp",0,0},
-  {31,"shuntDn",0,0}
+struct convert radiatorTab[] = {
+  -30,33,
+  -20,31,
+  -10,28,
+  0,21,
+  10,11,
+  20, 2,
+  0xff,0xff
 };
 
-struct convert {
-  int source;
-  int target;
-};
+conversion radiatorConverter(radiatorTab,16); 
 
-struct convert radiatorTab[]={ -30,33, // ambient -30 -> radiator=radiatorAdd+this
-			       -20,31,
-			       -10,28,
-			         0,21,
-			        10,11,
-			        20, 2,
-			        0xff,0xff}; // terminator
 
-/*
- * METHOD_TURNON
- * limit  - turn target on, if source drops below this limit
- * limit2 - hysteresis, turn target off if source exceeds limit+hysteresis.
- * target - (struct outIo), io port which should be turned on.
- *
- * METHOD_CHANGELIMIT
- * limit  - if source drop below this, then modify limit2 variable
- * limit2 - variable to be changed according to limit.
- * target - what is the new value of limit2 if activated
- *          note that this does not have any hysteresis. It is assumed the
- *          logic, following limit2 variable has a hysteresis.
- *          When this rule does not happen, the limit2 variable is returned
- *          back to its original value (copied from origvalue).
- *
- * METHOD_TABLE
- * limit  - variable to be modified according to table. Variables original value has no purpose.
- * limit2 - value to be added after table calculations.
- * target - table of values. table can be coarse, more specific results are interpolated.
- *
- * configurations are kept in array to have a possibility to configure them with tcp/ip telnet style commands
- * and to store them to eeprom.
- */
 struct condition conditions[]= {
-  {0,&adArr[0],&variables[0],&variables[1],&outIoArr[0], 0,METHOD_TURNON},       // start boiler if it is under 24.5, and off when it has reached 26.0
-  {1,&adArr[2],&variables[3],&variables[0],&variables[2],0,METHOD_CHANGELIMIT},  // if hothousewater is under hhboil, then boilTemp should be boilReduced.
-  {2,&adArr[1],&variables[4],NULL,radiatorTab,           0,METHOD_TABLE}         // changes in ambient will change radiatorReq with the help of radiatorAdd variable and radiatorTab table.
+  {0,&adArr[0],&hs1, METHOD_HEATSTORE},               
+  {1,&adArr[2],&hs1, METHOD_HEATSTORE_CHANGELIMIT},   
+  {2,&adArr[1],&bp1, METHOD_ANALOG},                  
+  {3,&adArr[3],&bp1, METHOD_ANALOG_RECHECK}         
 };
-
-
 
 
 int measTimeout=1800;
@@ -202,7 +159,7 @@ void setup() {
   pinMode(31, OUTPUT);
   Serial.println("Start");
   eepReadAll();
-  initVariables();
+  bp1.setConverter(&radiatorConverter);
   // preparing for configurable channels.
   // in future the amount of channels will be specified with config
   // and this amount with channel names are saved to eeprom.
@@ -266,24 +223,6 @@ void irqh1()
 }
 
 
-int resetVariable(char *name)
-{
-  for (int i=0;i<sizeof(variables) / sizeof(struct variable);i++) {
-    if (!strcmp(variables[i].name,name)) {
-      variables[i].value=variables[i].origvalue;
-      return 0;
-    }
-  }
-  return 1;
-}
-
-void initVariables()
-{
-  for (int i=0;i<sizeof(variables) / sizeof(struct variable);i++) {
-    variables[i].value=variables[i].origvalue;
-  }
-}
-
 void processSensors()
 {
   boolean timeouts=false;
@@ -316,74 +255,40 @@ void processSensors()
 void evaluateCondition(struct ad *source,time_t ts)
 {
   float value;
-  float limit;
-  float off;
-  struct outIo *targetIo;
-  struct variable *var;
-  struct convert *iTable;
+  heatStore *hs;
+  bypassValve *bpv;
 
   for (int i=0;i<sizeof(conditions) / sizeof(struct condition);i++) {
     if (conditions[i].source == source) {
-      conditions[i].last_chk = ts;
       value=source->measured.analog;
-      limit=conditions[i].limit->value;
       switch (conditions[i].method) {
-      case METHOD_TURNON:
-	targetIo=(struct outIo *) conditions[i].target;
-	off=limit + conditions[i].limit2->value;
-	if (value < limit && targetIo->state == 0) {
-	  targetIo->state = 1;
-	  targetIo->last_change = ts;
-	  digitalWrite(targetIo->port,1);
-	}
-	else if (value > off && targetIo->state == 1 ) {
-	  targetIo->state = 0;
-	  targetIo->last_change = ts;
-	  digitalWrite(targetIo->port,0);
-	}
+      case METHOD_HEATSTORE:
+	hs=(heatStore *) conditions[i].target;
+	hs->refresh(ts,value);
 	break;
 
-      case METHOD_CHANGELIMIT:
-	var=(struct variable *) conditions[i].target;
-	if (value < limit) 
-	  conditions[i].limit2->value=var->value;
-	else 
-	  resetVariable(conditions[i].limit2->name);
+      case METHOD_HEATSTORE_CHANGELIMIT:
+	hs=(heatStore *) conditions[i].target;
+	hs->chkTarget(ts,value);
 	break;
 
-      case METHOD_TABLE:
-	// calculate target
-	iTable=(struct convert *) conditions[i].target;
-	float target=resolveConversion(value,conditions[i].limit->value,iTable);
-	bp1.setTarget(target);
-	if (!bp1.turnBypass(ts))
+      case METHOD_ANALOG:
+	bpv=(class bypassValve *) conditions[i].target;
+	bpv->setGuide(value);
+	if (!bpv->turnBypass(ts))
 	  conditions[i].source->flags &= ~FLAGS_EVALUATE;
+	break;
+
+      case METHOD_ANALOG_RECHECK:
+	bpv=(class bypassValve *) conditions[i].target;
+	conditions[i].source->flags &= ~FLAGS_EVALUATE;
+	bpv->turnBypass(ts);
 	break;
       }
     }
   }
 }
 
-/* find boundings from conversion table
- * and convert / interpolate according to the table
- */
-float resolveConversion(float v,float adder,struct convert *ct)
-{
-  struct convert *start;
-  struct convert *stop;
-  float ret;
-
-  for (int i=0; ct[i].source != 0xff; i++) {
-    if (ct[i].source < v)
-      start=&ct[i];
-    else {
-      stop=&ct[i];
-      break;
-    }
-  }
-  ret = (adder + start->target) - ((v - start->source) / (stop->source - start->source) * (start->target - stop->target));
-  return ret;
-}
 
 void calcCnt()
 {

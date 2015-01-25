@@ -16,8 +16,13 @@ bypassValve::bypassValve(Timer *sched,char *name,float *actual,int up,int dn,int
   _targetTemp=-273;
 }
 
-void bypassValve::setTarget(float val) {
-  _targetTemp=val;
+void bypassValve::setConverter(conversion *c)
+{
+  _converter=c;
+}
+
+void bypassValve::setGuide(float val) {
+  _targetTemp=_converter->resolve(val);
 }
 
 int bypassValve::turnBypass(time_t ts) {
@@ -51,3 +56,5 @@ int bypassValve::turnBypass(time_t ts) {
     ret=0;
   return ret;
 }
+
+

@@ -4,12 +4,14 @@
 #include <Arduino.h>
 #include <Time.h>
 #include <Timer.h>
+#include "conversion.h"
 
 class bypassValve {
  public:
   bypassValve(Timer *sched,char *name,float *actual,int up,int dn,int timeMultiplier,int latency,float sensitivity,int minTurnTime,int maxTurnTime);
-  void setTarget(float val);
+  void setGuide(float val);
   int turnBypass(time_t ts);
+  void setConverter(conversion *c);
 
  private:
   char *_name;
@@ -24,6 +26,7 @@ class bypassValve {
   float _sensitivity;
   int _minTurnTime;     // milliseconds
   int _maxTurnTime;     // milliseconds
+  conversion *_converter;
 };
 
 #endif
