@@ -14,6 +14,7 @@ bypassValve::bypassValve(Timer *sched,char *name,float *actual,int up,int dn,int
   _minTurnTime=minTurnTime;
   _maxTurnTime=maxTurnTime;
   _targetTemp=-273;
+  _prevVal=-273;
 }
 
 void bypassValve::setConverter(conversion *c)
@@ -22,7 +23,10 @@ void bypassValve::setConverter(conversion *c)
 }
 
 void bypassValve::setGuide(float val) {
-  _targetTemp=_converter->resolve(val);
+  if (_prevVal != val) {
+    _targetTemp=_converter->resolve(val);
+    _prevVal=val;
+  }
 }
 
 int bypassValve::turnBypass(time_t ts) {
@@ -40,8 +44,6 @@ int bypassValve::turnBypass(time_t ts) {
 
   diff = _targetTemp - *_actualTemp;
   turntime=abs(diff) * _timeMultiplier;
-  Serial.print(" diff is ");
-  Serial.println(diff);
 
   if (turntime > _maxTurnTime)
     turntime=_maxTurnTime;

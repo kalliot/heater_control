@@ -24,6 +24,7 @@ class bypassValve {
   int _timeMultiplier;
   int _latency;         // seconds, how long does it take after up, or down op the realise change in targetAd.
   float _sensitivity;
+  float _prevVal;
   int _minTurnTime;     // milliseconds
   int _maxTurnTime;     // milliseconds
   conversion *_converter;
