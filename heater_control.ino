@@ -13,6 +13,7 @@
 #include "heatstore.h"
 #include "conversion.h"
 #include "adlimit.h"
+#include "lists.h"
 
 #define AD_SAMPLECNT 10
 #define FLAGS_DATACHANGE 0x01
@@ -74,14 +75,6 @@ struct cnt {
   struct dig2a measured;
 };
 
-
-struct outIo {
-  int port;
-  char *name;
-  int state;
-  time_t last_change;
-};
-
 #define METHOD_HEATSTORE                 1
 #define METHOD_HEATSTORE_CHANGELIMIT     2
 #define METHOD_ANALOG                    3
@@ -117,18 +110,7 @@ struct cnt cntArr[] = {                //prev prevsnd    diff   factor  scale  m
   {-1,"water",       0,0,0,0,irqh1,     0,0.0, 0,0.0,   0,0.1, 0,0.55, 50,1.0,  0,0.0}
 };
 
-struct convert radiatorTab[] = {
-  -30,33,
-  -20,31,
-  -10,28,
-  0,21,
-  10,11,
-  20, 2,
-  0xff,0xff
-};
-
-conversion radiatorConverter(radiatorTab,16); 
-
+conversion radiatorConverter(16);
 
 struct condition conditions[]= {
   {0,&adArr[0],&hs1, METHOD_HEATSTORE},               
@@ -159,6 +141,12 @@ void setup() {
   pinMode(31, OUTPUT);
   Serial.println("Start");
   eepReadAll();
+  radiatorConverter.add(-30,33);
+  radiatorConverter.add(-20,31);
+  radiatorConverter.add(-10,28);
+  radiatorConverter.add(  0,21);
+  radiatorConverter.add( 10,11);
+  radiatorConverter.add( 20, 2);
   bp1.setConverter(&radiatorConverter);
   // preparing for configurable channels.
   // in future the amount of channels will be specified with config

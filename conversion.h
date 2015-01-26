@@ -1,17 +1,22 @@
 #ifndef __CONVERSION__
 #define __CONVERSION__
 
+#include "lists.h"
+
 struct convert {
+  struct Node n;
   int source;
   int target;
 };
 
 class conversion {
 public:
-  conversion(struct convert *c,float adder);
+  conversion(float adder);
+  int add(int source,int target);
   float resolve(float v);
+  static int callback(struct Node *n,void *data);
 private:
-  struct convert *_ct;
+  List _cList;
   float _adder;
 };
 
