@@ -7,6 +7,8 @@
 #include <DS1307RTC.h>
 #include <stdio.h>
 #include <jsonlite.h>
+#include "LedControl.h"
+#include "spi7seg.h"
 #include "M2XStreamClient.h"
 #include "Iot.h"
 #include "bypassvalve.h"
@@ -130,6 +132,8 @@ EthernetUDP Udp;
 unsigned int localPort = 8888;  // local port to listen for UDP packets
 Iot iot(&m2xClient);
 int adReadCnt;
+LedControl lc=LedControl(37,33,35,1);
+spi7seg s7s = spi7seg(&lc);
 
 void setup() {
   int succ;
@@ -140,6 +144,9 @@ void setup() {
   pinMode(30, OUTPUT);
   pinMode(31, OUTPUT);
   Serial.println("Start");
+  lc.setIntensity(0,1);
+  s7s.number(0,8888);
+  s7s.number(1,8888);
   eepReadAll();
   radiatorConverter.add(-30,33);
   radiatorConverter.add(-20,31);
@@ -165,6 +172,7 @@ void setup() {
   }
   else {
     Serial.print("ip address is ");
+    s7s.number(1,Ethernet.localIP()[3]);
     for (byte thisByte = 0; thisByte < 4; thisByte++) {
       // print the value of each byte of the IP address:
       Serial.print(Ethernet.localIP()[thisByte], DEC);
@@ -172,12 +180,15 @@ void setup() {
     }
     Serial.println();
   }
+
+
   resetAdChannels(adArr,(sizeof(adArr) / sizeof(struct ad)));
   ipserver.begin();
   Udp.begin(localPort);
   setSyncInterval(7200);
   setSyncProvider(getNtpTime);
   sched.every(1000,processSensors);
+  sched.every(4000,disp7seg);
   sched.every(10000,evaluateConditions);
   sched.every(200,checkEthernet);
   _counters=(int *) malloc(sizeof(int) * sizeof(cntArr) / sizeof(struct cnt));
@@ -210,6 +221,46 @@ void irqh1()
   _counters[1]++;
 }
 
+void disp7seg()
+{
+  dispRow0();
+  dispRow1();
+}
+
+void dispRow0()
+{
+  static int i;
+  int value;
+
+  value = (int)(adArr[i].measured.analog * 100);
+  s7s.number(0,value);
+  i++;
+  if (i==4)
+    i=0;
+}
+
+void dispRow1()
+{
+  static int i;
+
+  switch (i) {
+  case 0:
+    s7s.date(1);
+    break;
+
+  case 1:
+  case 2:
+    s7s.time(1);
+    break;
+
+  case 3:
+    int value=(int)(cntArr[0].measured.analog * 100);
+    s7s.number(1,value);
+    break;
+  }
+  if (++i==4)
+    i=0;
+}
 
 void processSensors()
 {
@@ -527,6 +578,7 @@ boolean chkAdChange(struct ad *ad, int cnt)
 {
   boolean ret=false;
   int digital=0;
+  int seg7;
 
   for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
     digital = ad[analogChannel].measured.digital;
@@ -547,6 +599,7 @@ int calcAdChannels(struct ad *ad, int cnt)
   int ddelta;
   float adelta;
   time_t ts=now();
+  int seg7;
 
   for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
     if (ad[analogChannel].flags & FLAGS_DATACHANGE) {
@@ -557,7 +610,6 @@ int calcAdChannels(struct ad *ad, int cnt)
 
       ad[analogChannel].measured.analog  = ad[analogChannel].mincal.analog +
 	(digital - ad[analogChannel].mincal.digital) * adelta / ddelta;
-
       ad[analogChannel].last_send=ts;
       ad[analogChannel].prev.analog = ad[analogChannel].measured.analog;
       ad[analogChannel].prev.digital = ad[analogChannel].measured.digital;
