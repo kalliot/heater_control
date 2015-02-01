@@ -20,6 +20,11 @@ spi7seg::spi7seg(LedControl *lc)
   }
 }
 
+void spi7seg::dot(boolean showdot)
+{
+  _showdot=showdot;
+}
+
 void spi7seg::time(int line)
 {
   int ones;
@@ -40,7 +45,7 @@ void spi7seg::time(int line)
   thousands=hours % 10;
 
   _lc->setDigit(0,row+3,(byte)thousands,false);
-  _lc->setDigit(0,row+2,(byte)hundreds,false);
+  _lc->setDigit(0,row+2,(byte)hundreds,true);
   _lc->setDigit(0,row+1,(byte)tens,false);
   _lc->setDigit(0,row+0,(byte)ones,false);
 }
@@ -65,7 +70,7 @@ void spi7seg::date(int line)
   thousands=months % 10;
 
   _lc->setDigit(0,row+3,(byte)tens,false);
-  _lc->setDigit(0,row+2,(byte)ones,false);
+  _lc->setDigit(0,row+2,(byte)ones,true);
   _lc->setDigit(0,row+1,(byte)thousands,false);
   _lc->setDigit(0,row+0,(byte)hundreds,false);
 }
@@ -97,6 +102,8 @@ void spi7seg::number(int line,int v) {
     v=v/10;
     hundreds=v;
     _lc->setChar(0,row+3,'-',false);
+    _lc->setDigit(0,row+2,(byte)hundreds,_showdot);
+    _lc->setDigit(0,row+1,(byte)tens,true);
   }
   else {
     ones=v%10;
@@ -107,8 +114,8 @@ void spi7seg::number(int line,int v) {
     v=v/10;
     thousands=v;	
     _lc->setDigit(0,row+3,(byte)thousands,false);
+    _lc->setDigit(0,row+2,(byte)hundreds,_showdot);
+    _lc->setDigit(0,row+1,(byte)tens,false);
   }
-  _lc->setDigit(0,row+2,(byte)hundreds,false);
-  _lc->setDigit(0,row+1,(byte)tens,false);
   _lc->setDigit(0,row+0,(byte)ones,false);
 }

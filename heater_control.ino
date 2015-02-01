@@ -173,6 +173,7 @@ void setup() {
   else {
     Serial.print("ip address is ");
     s7s.number(1,Ethernet.localIP()[3]);
+    s7s.dot(true);
     for (byte thisByte = 0; thisByte < 4; thisByte++) {
       // print the value of each byte of the IP address:
       Serial.print(Ethernet.localIP()[thisByte], DEC);
