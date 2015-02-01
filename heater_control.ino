@@ -230,11 +230,8 @@ void disp7seg()
 void dispRow0()
 {
   static int i;
-  int value;
 
-  value = (int)(adArr[i].measured.analog * 100);
-  s7s.number(0,value);
-  i++;
+  s7s.number(0,adArr[i++].measured.analog);
   if (i==4)
     i=0;
 }
@@ -254,8 +251,7 @@ void dispRow1()
     break;
 
   case 3:
-    int value=(int)(cntArr[0].measured.analog * 100);
-    s7s.number(1,value);
+    s7s.number(1,cntArr[0].measured.analog);
     break;
   }
   if (++i==4)

@@ -70,6 +70,15 @@ void spi7seg::date(int line)
   _lc->setDigit(0,row+0,(byte)hundreds,false);
 }
 
+void spi7seg::number(int line,float v) {
+  int val;
+
+  if (v<0)
+    val=(int)(10 * v);
+  else
+    val=(int)(100 * v);
+  number(line,val);
+}
 
 void spi7seg::number(int line,int v) {
   int ones;
