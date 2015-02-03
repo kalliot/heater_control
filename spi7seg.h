@@ -7,10 +7,10 @@ class spi7seg {
 public:
   spi7seg(LedControl *lc);
   void dot(boolean showdot);
-  void time(int line);
-  void date(int line);
-  void number(int line,int v);
-  void number(int line,float v);
+  void time(int device,int line);
+  void date(int device,int line);
+  void number(int device,int line,int v);
+  void number(int device,int line,float v);
 private:
   LedControl *_lc;
   boolean _showdot;

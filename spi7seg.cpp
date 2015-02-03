@@ -25,7 +25,7 @@ void spi7seg::dot(boolean showdot)
   _showdot=showdot;
 }
 
-void spi7seg::time(int line)
+void spi7seg::time(int device,int line)
 {
   int ones;
   int tens;
@@ -44,13 +44,13 @@ void spi7seg::time(int line)
   hours=hours/10;
   thousands=hours % 10;
 
-  _lc->setDigit(0,row+3,(byte)thousands,false);
-  _lc->setDigit(0,row+2,(byte)hundreds,true);
-  _lc->setDigit(0,row+1,(byte)tens,false);
-  _lc->setDigit(0,row+0,(byte)ones,false);
+  _lc->setDigit(device,row+3,(byte)thousands,false);
+  _lc->setDigit(device,row+2,(byte)hundreds,true);
+  _lc->setDigit(device,row+1,(byte)tens,false);
+  _lc->setDigit(device,row+0,(byte)ones,false);
 }
 
-void spi7seg::date(int line)
+void spi7seg::date(int device,int line)
 {
   int ones;
   int tens;
@@ -69,23 +69,23 @@ void spi7seg::date(int line)
   months=months/10;
   thousands=months % 10;
 
-  _lc->setDigit(0,row+3,(byte)tens,false);
-  _lc->setDigit(0,row+2,(byte)ones,true);
-  _lc->setDigit(0,row+1,(byte)thousands,false);
-  _lc->setDigit(0,row+0,(byte)hundreds,false);
+  _lc->setDigit(device,row+3,(byte)tens,false);
+  _lc->setDigit(device,row+2,(byte)ones,true);
+  _lc->setDigit(device,row+1,(byte)thousands,false);
+  _lc->setDigit(device,row+0,(byte)hundreds,false);
 }
 
-void spi7seg::number(int line,float v) {
+void spi7seg::number(int device,int line,float v) {
   int val;
 
   if (v<0)
     val=(int)(10 * v);
   else
     val=(int)(100 * v);
-  number(line,val);
+  number(device,line,val);
 }
 
-void spi7seg::number(int line,int v) {
+void spi7seg::number(int device,int line,int v) {
   int ones;
   int tens;
   int hundreds;
@@ -101,9 +101,9 @@ void spi7seg::number(int line,int v) {
     tens=v%10;
     v=v/10;
     hundreds=v;
-    _lc->setChar(0,row+3,'-',false);
-    _lc->setDigit(0,row+2,(byte)hundreds,_showdot);
-    _lc->setDigit(0,row+1,(byte)tens,true);
+    _lc->setChar(device,row+3,'-',false);
+    _lc->setDigit(device,row+2,(byte)hundreds,_showdot);
+    _lc->setDigit(device,row+1,(byte)tens,true);
   }
   else {
     ones=v%10;
@@ -113,9 +113,9 @@ void spi7seg::number(int line,int v) {
     hundreds=v%10;
     v=v/10;
     thousands=v;	
-    _lc->setDigit(0,row+3,(byte)thousands,false);
-    _lc->setDigit(0,row+2,(byte)hundreds,_showdot);
-    _lc->setDigit(0,row+1,(byte)tens,false);
+    _lc->setDigit(device,row+3,(byte)thousands,false);
+    _lc->setDigit(device,row+2,(byte)hundreds,_showdot);
+    _lc->setDigit(device,row+1,(byte)tens,false);
   }
-  _lc->setDigit(0,row+0,(byte)ones,false);
+  _lc->setDigit(device,row+0,(byte)ones,false);
 }

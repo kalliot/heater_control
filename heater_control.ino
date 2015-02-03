@@ -145,8 +145,8 @@ void setup() {
   pinMode(31, OUTPUT);
   Serial.println("Start");
   lc.setIntensity(0,1);
-  s7s.number(0,8888);
-  s7s.number(1,8888);
+  s7s.number(0,0,8888);
+  s7s.number(0,1,8888);
   eepReadAll();
   radiatorConverter.add(-30,33);
   radiatorConverter.add(-20,31);
@@ -172,7 +172,7 @@ void setup() {
   }
   else {
     Serial.print("ip address is ");
-    s7s.number(1,Ethernet.localIP()[3]);
+    s7s.number(0,1,Ethernet.localIP()[3]);
     s7s.dot(true);
     for (byte thisByte = 0; thisByte < 4; thisByte++) {
       // print the value of each byte of the IP address:
@@ -232,7 +232,7 @@ void dispRow0()
 {
   static int i;
 
-  s7s.number(0,adArr[i++].measured.analog);
+  s7s.number(0,0,adArr[i++].measured.analog);
   if (i==4)
     i=0;
 }
@@ -243,16 +243,16 @@ void dispRow1()
 
   switch (i) {
   case 0:
-    s7s.date(1);
+    s7s.date(0,1);
     break;
 
   case 1:
   case 2:
-    s7s.time(1);
+    s7s.time(0,1);
     break;
 
   case 3:
-    s7s.number(1,cntArr[0].measured.analog);
+    s7s.number(0,1,cntArr[0].measured.analog);
     break;
   }
   if (++i==4)
