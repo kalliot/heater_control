@@ -102,8 +102,8 @@ void spi7seg::number(int device,int line,int v) {
     v=v/10;
     hundreds=v;
     _lc->setChar(device,row+3,'-',false);
-    _lc->setDigit(device,row+2,(byte)hundreds,_showdot);
-    _lc->setDigit(device,row+1,(byte)tens,true);
+    _lc->setDigit(device,row+2,(byte)hundreds,false);
+    _lc->setDigit(device,row+1,(byte)tens,_showdot);
   }
   else {
     ones=v%10;
