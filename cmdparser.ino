@@ -22,15 +22,6 @@ static struct ipcmd commands[] = {
   {"",0,NULL}
 };
 
-static int search_ad(char *name)
-{
-  for (int i=0;i < sizeof(adArr) / sizeof(struct ad);i++) {
-    if (!strcmp(adArr[i].name,name))
-      return i;
-  }
-  return -1;
-}
-
 static void reply2remote(EthernetClient c,char *cmd,char *ret,char *msg)
 {
     c.write(cmd);
@@ -41,28 +32,30 @@ static void reply2remote(EthernetClient c,char *cmd,char *ret,char *msg)
 
 static void ipadcalibr(EthernetClient client,int argc,char *argv[])
 {
-  int adindex=search_ad(argv[1]);
-  if (adindex==-1) {
+  struct ad *ad;
+
+  ad=adinput.getNamed(argv[1]);
+  if (ad==NULL) {
     reply2remote(client,argv[0],":ERR:UNKNOWN CHANNEL:",argv[1]);
     return;
   }
   if (!strcmp(argv[2],"min")) {
     float v=atof(argv[3]);
-    adArr[adindex].mincal.analog=v;
+    ad->mincal.analog=v;
     if (argc==4)  // use current digital value;
-      adArr[adindex].mincal.digital=adArr[adindex].prev.digital;
+      ad->mincal.digital=ad->prev.digital;
     if (argc==5) // user what we got from remote
-      adArr[adindex].mincal.digital=atoi(argv[4]);
+      ad->mincal.digital=atoi(argv[4]);
     reply2remote(client,argv[0],":OK:",argv[1]);
     return;
   }
   else if (!strcmp(argv[2],"max")) {
     float v=atof(argv[3]);
-    adArr[adindex].maxcal.analog=v;
+    ad->maxcal.analog=v;
     if (argc==4)  // use current digital value;
-      adArr[adindex].maxcal.digital=adArr[adindex].prev.digital;
+      ad->maxcal.digital=ad->prev.digital;
     if (argc==5) // user what we got from remote
-      adArr[adindex].maxcal.digital=atoi(argv[4]);
+      ad->maxcal.digital=atoi(argv[4]);
     reply2remote(client,argv[0],":OK:",argv[1]);
     return;
   }
@@ -91,6 +84,7 @@ static char *f2str(float val)
 static void ipshowsetup(EthernetClient client,int argc,char *argv[])
 {
   char str[12];
+  struct ad *ad;
 
   client.write("m2xfeed,");
   client.write(eepromsetup.m2xfeed);
@@ -101,29 +95,29 @@ static void ipshowsetup(EthernetClient client,int argc,char *argv[])
   client.write(itoa(measTimeout,str,10));
   client.write("\n");
 
-  for (int i=0;i < sizeof(adArr) / sizeof(struct ad);i++) {
+  for (ad=adinput.getFirst();ad!=NULL;ad=adinput.getNext(ad)) {
     client.write("adcalibr,");
-    client.write(adArr[i].name);
+    client.write(ad->name);
     client.write(",min,");
-    client.write(f2str(adArr[i].mincal.analog));
+    client.write(f2str(ad->mincal.analog));
 
     client.write(",");
-    client.write(itoa(adArr[i].mincal.digital,str,10));
+    client.write(itoa(ad->mincal.digital,str,10));
     client.write("\n");
 
     client.write("adcalibr,");
-    client.write(adArr[i].name);
+    client.write(ad->name);
     client.write(",max,");
-    client.write(f2str(adArr[i].maxcal.analog));
+    client.write(f2str(ad->maxcal.analog));
 
     client.write(",");
-    client.write(itoa(adArr[i].maxcal.digital,str,10));
+    client.write(itoa(ad->maxcal.digital,str,10));
     client.write("\n");
 
     client.write("adcalibr,");
-    client.write(adArr[i].name);
+    client.write(ad->name);
     client.write(",diff,");
-    client.write(f2str(adArr[i].diff.analog));
+    client.write(f2str(ad->diff.analog));
 
     client.write("\n");
   }

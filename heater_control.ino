@@ -7,6 +7,7 @@
 #include <DS1307RTC.h>
 #include <stdio.h>
 #include <jsonlite.h>
+#include "heater_control.h"
 #include "LedControl.h"
 #include "spi7seg.h"
 #include "M2XStreamClient.h"
@@ -15,12 +16,9 @@
 #include "heatstore.h"
 #include "conversion.h"
 #include "adlimit.h"
+#include "AdInput.h"
 #include "lists.h"
 
-#define AD_SAMPLECNT 10
-#define FLAGS_DATACHANGE 0x01
-#define FLAGS_TIMEOUT 0x02
-#define FLAGS_EVALUATE 0x04
 
 #define OUTIO_ACTIVE 0x01
 
@@ -39,27 +37,6 @@ int volatile *_counters;
 IPAddress ip(192,168,1,177);
 IPAddress gateway(192,168,1, 1);
 IPAddress subnet(255, 255, 0, 0);
-
-
-struct dig2a
-{
-  int digital;
-  float analog;
-};
-
-
-struct ad {
-  int port;
-  char *name;
-  int flags;
-  time_t last_send;
-  struct dig2a prev;
-  struct dig2a diff;
-  struct dig2a mincal;
-  struct dig2a maxcal;
-  struct dig2a measured;
-  struct dig2a delta;
-};
 
 struct cnt {
   unsigned int irqno;
@@ -90,19 +67,10 @@ struct condition {
   int method;
 };
 
-// in future this table shall be stored mainly in eeprom.
-// and so is it's size
-struct ad adArr[]= {          //prev   dif    min       max         meas    delta
-  {2,"boiler",       0,0,     0,0.0, 0,0.5, 174,21.0, 935, 100.0,  0,-273.0,  0,0.0},
-  {3,"ambient",      0,0,     0,0.0, 0,0.3, 372,2.2,  964,  36.5,  0,-273.0,  0,0.0},
-  {4,"hothousewater",0,0,     0,0.0, 0,0.5, 7,  21.0, 1023,100.0,  0,-273.0,  0,0.0},
-  {5,"radiator",     0,0,     0,0.0, 0,0.3, 7,  21.0, 539,  36.5,  0,-273.0,  0,0.0}
-};
-
 
 Timer sched;
 adlimit adl1(25.0);
-bypassValve bp1(&sched,"heating",&adArr[3].measured.analog,30,31,1000,30,0.3,800,10000);
+bypassValve bp1;
 heatStore hs1(12,25,&adl1,24,1.5,30);
 
 // counters are kept in array, this for preparing to have more of them.
@@ -115,10 +83,10 @@ struct cnt cntArr[] = {                //prev prevsnd    diff   factor  scale  m
 conversion radiatorConverter(16);
 
 struct condition conditions[]= {
-  {0,&adArr[0],&hs1, METHOD_HEATSTORE},               
-  {1,&adArr[2],&hs1, METHOD_HEATSTORE_CHANGELIMIT},   
-  {2,&adArr[1],&bp1, METHOD_ANALOG},                  
-  {3,&adArr[3],&bp1, METHOD_ANALOG_RECHECK}         
+  {0,NULL,&hs1, METHOD_HEATSTORE},               
+  {1,NULL,&hs1, METHOD_HEATSTORE_CHANGELIMIT},   
+  {2,NULL,&bp1, METHOD_ANALOG},                  
+  {3,NULL,&bp1, METHOD_ANALOG_RECHECK}         
 };
 
 
@@ -131,6 +99,7 @@ EthernetClient ipclient;
 EthernetUDP Udp;
 unsigned int localPort = 8888;  // local port to listen for UDP packets
 Iot iot(&m2xClient);
+AdInput adinput(measTimeout);
 int adReadCnt;
 LedControl lc=LedControl(37,33,35,1);
 spi7seg s7s = spi7seg(&lc);
@@ -148,6 +117,18 @@ void setup() {
   s7s.number(0,0,8888);
   s7s.number(0,1,8888);
   eepReadAll();
+  adinput.add(2,"boiler",       0.5, 174, 21.0, 935, 100.0);
+  adinput.add(3,"ambient",      0.3, 372, 2.2,  964,  36.5);
+  adinput.add(4,"hothousewater",0.5, 7,   21.0, 1023,100.0);
+  adinput.add(5,"radiator",     0.3, 7,   21.0, 539,  36.5);
+
+  conditions[0].source = adinput.getNamed("boiler");
+  conditions[1].source = adinput.getNamed("hothousewater");
+  conditions[2].source = adinput.getNamed("ambient");
+  conditions[3].source = adinput.getNamed("radiator");
+
+  bp1 = bypassValve(&sched,"heating",&adinput.getNamed("radiator")->measured.analog,30,31,1000,30,0.3,800,10000);
+
   radiatorConverter.add(-30,33);
   radiatorConverter.add(-20,31);
   radiatorConverter.add(-10,28);
@@ -163,7 +144,6 @@ void setup() {
     return;
   }
   eepShow();
-  initAdChannels(adArr,sizeof(adArr) / sizeof(struct ad));
   setTime(RTC.get());
   succ=Ethernet.begin(mac);
   if (!succ) {
@@ -182,8 +162,7 @@ void setup() {
     Serial.println();
   }
 
-
-  resetAdChannels(adArr,(sizeof(adArr) / sizeof(struct ad)));
+  adinput.reset();
   ipserver.begin();
   Udp.begin(localPort);
   setSyncInterval(7200);
@@ -230,11 +209,12 @@ void disp7seg()
 
 void dispRow0()
 {
-  static int i;
+  static struct ad *ad=adinput.getFirst();
 
-  s7s.number(0,0,adArr[i++].measured.analog);
-  if (i==4)
-    i=0;
+  s7s.number(0,0,ad->measured.analog);
+  ad = adinput.getNext(ad);  
+  if (ad->n.ln_Succ == NULL)
+    ad = adinput.getFirst();
 }
 
 void dispRow1()
@@ -265,26 +245,35 @@ void processSensors()
   boolean cntTimeouts,cntChanges;
   boolean changes=false;
   time_t ts=now();
-  int chcnt=(sizeof(adArr) / sizeof(struct ad));
 
-  if (readAdChannels(adArr,chcnt)) {
+  if (adinput.read()) {
     sched.oscillate(13,150, LOW,2);
     cntTimeouts=chkCntTimeouts(ts,false);
     cntChanges=chkCntChanged();
-    timeouts=chkAdTimeouts(adArr,chcnt, ts, (cntTimeouts || cntChanges));
-    changes=chkAdChange(adArr,chcnt);
+    timeouts=adinput.isTimeout(ts, (cntTimeouts || cntChanges));
+    changes=adinput.verify();
     // if there is something to send, advance other channel sends,
     // in case they are enough near with timeout. This way we get
     // more values to send in same m2x packet.
     if (timeouts || changes) {
       if (!cntTimeouts)
 	chkCntTimeouts(ts,true);
-      chkAdTimeouts(adArr,chcnt, ts, true);
+      adinput.isTimeout(ts,true);
     }
-    calcAdChannels(adArr,chcnt);
+    adinput.calc();
     calcCnt();
-    sendM2X(adArr,chcnt);
-    resetAdChannels(adArr,chcnt);
+    sendM2X();
+    adinput.reset();
+  }
+}
+
+void evaluateConditions(void)
+{
+  time_t ts=now();
+  struct ad *ad;
+
+  for (ad=adinput.getFirst();ad->n.ln_Succ!=NULL;ad=adinput.getNext(ad)) {
+    evaluateCondition(ad,ts);
   }
 }
 
@@ -455,7 +444,7 @@ float cntAvg(int index)
          (cntArr[index].scale.digital * cntArr[index].scale.analog);
 }
 
-void sendM2X(struct ad *ad,int cnt)
+void sendM2X(void)
 {
   char chbuf[22];
   char prevtime[22];
@@ -470,15 +459,7 @@ void sendM2X(struct ad *ad,int cnt)
   buildTime(ts,chbuf);
   iot.reset();
 
-  // ad build part
-  for (int chan = 0; chan < cnt; chan++) {    
-    if (ad[chan].flags & FLAGS_DATACHANGE) {
-      iot.name(ad[chan].name);
-      iot.addValue(ad[chan].measured.analog,chbuf);
-      iot.next();
-    }
-  }
-
+  adinput.buildIot(chbuf,&iot);
   // counter build part
   for (int i=0;i<(sizeof(cntArr) / sizeof(struct cnt));i++) {
     if (cntArr[i].irqno!=-1) {
@@ -525,112 +506,5 @@ void sendM2X(struct ad *ad,int cnt)
     Serial.print(".");
 }
 
-int initAdChannels(struct ad *ad, int cnt)
-{
-  for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
-    ad[analogChannel].delta.digital=ad[analogChannel].maxcal.digital - ad[analogChannel].mincal.digital;
-    ad[analogChannel].delta.analog=ad[analogChannel].maxcal.analog - ad[analogChannel].mincal.analog;
-    ad[analogChannel].diff.digital=AD_SAMPLECNT * ad[analogChannel].delta.digital / ad[analogChannel].delta.analog * ad[analogChannel].diff.analog;
-  }
-}
 
 
-// read just cumulates the digital value
-// average and analog value is calculated elsewhere
-int readAdChannels(struct ad *ad, int cnt)
-{
-  int digital=0;
-  int ddelta;
-  float adelta;
-
-  adReadCnt++;
-  for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
-    digital= analogRead(ad[analogChannel].port);
-    ad[analogChannel].measured.digital += digital;
-  }
-  if (adReadCnt==AD_SAMPLECNT)
-    return 1;
-  return 0;
-}
-
-boolean chkAdTimeouts(struct ad *ad, int cnt, time_t ts, boolean advance)
-{
-  time_t timeout=measTimeout;
-  boolean ret=false;
-
-  if (advance)
-    timeout -= 300;
-  for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
-    if (ts-ad[analogChannel].last_send > timeout) {
-      ad[analogChannel].flags |= FLAGS_DATACHANGE;
-      ad[analogChannel].flags |= FLAGS_EVALUATE;
-      ret=true;
-    }
-  }
-  return ret;
-}
-
-
-boolean chkAdChange(struct ad *ad, int cnt)
-{
-  boolean ret=false;
-  int digital=0;
-  int seg7;
-
-  for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
-    digital = ad[analogChannel].measured.digital;
-    if ((abs(digital - ad[analogChannel].prev.digital)) > ad[analogChannel].diff.digital) {
-      ad[analogChannel].flags |= FLAGS_DATACHANGE;
-      ad[analogChannel].flags |= FLAGS_EVALUATE;
-      ret=true;
-    }
-  }
-  return ret;
-}
-
-
-
-int calcAdChannels(struct ad *ad, int cnt)
-{
-  int digital=0;
-  int ddelta;
-  float adelta;
-  time_t ts=now();
-  int seg7;
-
-  for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
-    if (ad[analogChannel].flags & FLAGS_DATACHANGE) {
-      digital = ad[analogChannel].measured.digital / adReadCnt;
-      // inter- and extrapolation
-      ddelta=ad[analogChannel].delta.digital;
-      adelta=ad[analogChannel].delta.analog;
-
-      ad[analogChannel].measured.analog  = ad[analogChannel].mincal.analog +
-	(digital - ad[analogChannel].mincal.digital) * adelta / ddelta;
-      ad[analogChannel].last_send=ts;
-      ad[analogChannel].prev.analog = ad[analogChannel].measured.analog;
-      ad[analogChannel].prev.digital = ad[analogChannel].measured.digital;
-      evaluateCondition(&ad[analogChannel],ts);
-    }
-  }
-  return 0;
-}
-
-void evaluateConditions() {
-  int cnt=sizeof(adArr) / sizeof(struct ad);
-  time_t ts=now();
-
-  for (int i = 0; i < cnt; i++) {
-    if (adArr[i].flags & FLAGS_EVALUATE)
-      evaluateCondition(&adArr[i],ts);
-  }
-}
-
-void resetAdChannels(struct ad *ad, int cnt)
-{
-  for (int analogChannel = 0; analogChannel < cnt; analogChannel++) {
-    ad[analogChannel].flags &= ~FLAGS_DATACHANGE;
-    ad[analogChannel].measured.digital = 0;
-  }
-  adReadCnt=0;
-}

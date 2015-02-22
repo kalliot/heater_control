@@ -1,7 +1,14 @@
 #include "bypassvalve.h"
 
 
+bypassValve::bypassValve(void) {
+}
+
 bypassValve::bypassValve(Timer *sched,char *name,float *actual,int up,int dn,int timeMultiplier,int latency,float sensitivity,int minTurnTime,int maxTurnTime) {
+  set(sched,name,actual,up,dn,timeMultiplier,latency,sensitivity,minTurnTime,maxTurnTime);
+}
+
+void bypassValve::set(Timer *sched,char *name,float *actual,int up,int dn,int timeMultiplier,int latency,float sensitivity,int minTurnTime,int maxTurnTime) {
   _sched=sched;
   _name=name;
   _actualTemp=actual;

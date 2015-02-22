@@ -90,13 +90,18 @@ void eepReadAll()
 
 void eepWriteAll()
 {
-  for (int i=0;i<4;i++) {
-    eepromsetup.ad[i].mindigital = adArr[i].mincal.digital;
-    eepromsetup.ad[i].minvalue   = adArr[i].mincal.analog;
-    eepromsetup.ad[i].maxdigital = adArr[i].maxcal.digital;
-    eepromsetup.ad[i].maxvalue   = adArr[i].maxcal.analog;
-    eepromsetup.ad[i].diff       = adArr[i].diff.analog;
-  }
+  struct ad *ad;
+
+  ad = adinput.getFirst();
+  int i=0;
+  do {
+    eepromsetup.ad[i].mindigital = ad->mincal.digital;
+    eepromsetup.ad[i].minvalue   = ad->mincal.analog;
+    eepromsetup.ad[i].maxdigital = ad->maxcal.digital;
+    eepromsetup.ad[i].maxvalue   = ad->maxcal.analog;
+    eepromsetup.ad[i].diff       = ad->diff.analog;
+    i++;
+  } while ((ad = adinput.getNext(ad)) != NULL);  
   eepromsetup.id=VERNUM;
   eepromsetup.meastimeout=measTimeout;
   // feedId and key need not to be copied, they are stored directly

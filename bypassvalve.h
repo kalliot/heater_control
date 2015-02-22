@@ -8,7 +8,11 @@
 
 class bypassValve {
  public:
-  bypassValve(Timer *sched,char *name,float *actual,int up,int dn,int timeMultiplier,int latency,float sensitivity,int minTurnTime,int maxTurnTime);
+  bypassValve(void);
+  bypassValve(Timer *sched,char *name,float *actual,int up,int dn,int timeMultiplier,
+	      int latency,float sensitivity,int minTurnTime,int maxTurnTime);
+  void set(Timer *sched,char *name,float *actual,int up,int dn,int timeMultiplier,
+	   int latency,float sensitivity,int minTurnTime,int maxTurnTime);
   void setGuide(float val);
   int turnBypass(time_t ts);
   void setConverter(conversion *c);
