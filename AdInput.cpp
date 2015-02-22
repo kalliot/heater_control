@@ -81,14 +81,16 @@ int AdInput::_calc(struct Node *n,void *data)
   time_t *ts=(time_t *) data;
   struct ad *a=(struct ad *) n;
 
-  digital  = a->measured.digital / AD_SAMPLECNT;
-  ddelta   = a->delta.digital;
-  adelta   = a->delta.analog;
+  if (a->flags & FLAGS_DATACHANGE) {
+    digital  = a->measured.digital / AD_SAMPLECNT;
+    ddelta   = a->delta.digital;
+    adelta   = a->delta.analog;
   
-  a->measured.analog  = a->mincal.analog + (digital - a->mincal.digital) * adelta / ddelta;
-  a->last_send        = *ts;
-  a->prev.analog      = a->measured.analog;
-  a->prev.digital     = a->measured.digital;
+    a->measured.analog  = a->mincal.analog + (digital - a->mincal.digital) * adelta / ddelta;
+    a->last_send        = *ts;
+    a->prev.analog      = a->measured.analog;
+    a->prev.digital     = a->measured.digital;
+  }
   return 0;
 }
 
@@ -175,8 +177,9 @@ int AdInput::_timeout(struct Node *n,void *data)
 {
   struct ad *a=(struct ad *) n;
   time_t *ts= (time_t *) data;
-
-  if (*ts-a->last_send > _currTimeout) {
+  int elapsed= (*ts - a->last_send);
+  
+  if (elapsed > _currTimeout) {
     a->flags |= FLAGS_DATACHANGE;
     a->flags |= FLAGS_EVALUATE;
     _isTimeout=true;
