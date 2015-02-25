@@ -1,0 +1,8 @@
+#ifndef __HEATER_CONTROL__
+#define __HEATER_CONTROL__
+
+#define FLAGS_DATACHANGE 0x01
+#define FLAGS_TIMEOUT 0x02
+#define FLAGS_EVALUATE 0x04
+
+#endif
