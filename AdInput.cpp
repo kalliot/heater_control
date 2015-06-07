@@ -18,14 +18,9 @@ int AdInput::add(int port,char *name,float diff,
 		 int mind,float minf,int maxd,float maxf)
 {
   struct ad *a;
-  int addr;
 
   a = (struct ad *) malloc(sizeof(struct ad));
   if (a!=NULL) {
-    addr=(int) a;
-    Serial.print(name);
-    Serial.print(":");
-    Serial.println(addr);
     a->port            = port;
     a->name            = name;
     a->diff.analog     = diff;
