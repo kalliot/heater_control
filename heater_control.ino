@@ -135,6 +135,7 @@ void setup() {
   radiatorConverter.add(  0,21);
   radiatorConverter.add( 10,11);
   radiatorConverter.add( 20, 2);
+  radiatorConverter.add( 30, 0);
   bp1.setConverter(&radiatorConverter);
   // preparing for configurable channels.
   // in future the amount of channels will be specified with config
