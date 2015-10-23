@@ -4,12 +4,20 @@
 */
 
 #include <stdio.h>
+#include <PubNub.h>
+#include "heater_control.h"
 #include "Iot.h"	
 #include "M2XStreamClient.h"
+
+
 
 Iot::Iot(M2XStreamClient *m2xsc) 
 {
   _m2xsc = m2xsc;
+  strcpy(pubkey,"demo");
+  strcpy(subkey,"demo");
+  strcpy(channel,"demo_tutorial");
+  PubNub.begin(pubkey, subkey);
   return;
 }
 
@@ -67,10 +75,64 @@ int Iot::getRecCnt()
   return _samplecnt;
 }
 
+int Iot::toggle(char *name,int state,int duration)
+{
+  EthernetClient *pclient;
+  char msg[128];
+
+  sprintf(msg,"{\"measurements\":[],\"states\":[{\"name\":\"%s\",\"value\":\%d\,\"duration\":%d}]}",name,state,duration);
+  Serial.print("Iot::send pubnub: ");
+  Serial.println(msg);
+  
+  digitalWrite(SEND_LED,1); 
+  pclient = PubNub.publish(channel, msg);
+  digitalWrite(SEND_LED,0); 
+  if (!pclient) {
+    Serial.println("publishing error");
+  }
+  else
+    pclient->stop();
+
+}
+
 int Iot::send(char *id)
 {
-  return _m2xsc->postDeviceUpdates(id, _pos, _streamNames,
-                              _counts, _ats, _values);
+   EthernetClient *pclient;
+
+   char msg[256]="{\"measurements\":[";
+   int i,j,ret;
+   char s[16];
+
+   for (i=0;i<_pos;i++) {
+       strcat(msg,"{\"name\":\"");
+       strcat(msg,_streamNames[i]);
+       strcat(msg,"\",\"values\":[");
+       for (j=0;j<_counts[i];j++) {
+          dtostrf(_values[i+j],4,1,s);
+          strcat(msg,s);
+          strcat(msg,",");
+       }
+      msg[strlen(msg)-1]=0;
+      strcat(msg,"]},");
+   }
+   if (_pos) {
+      msg[strlen(msg)-1]=0;
+      strcat(msg,"],\"states\":[]}");
+      Serial.print("Iot::send pubnub: ");
+      Serial.println(msg);
+
+      digitalWrite(SEND_LED,1); 
+      pclient = PubNub.publish(channel, msg);
+      if (!pclient) {
+         Serial.println("publishing error");
+      }
+      else
+         pclient->stop();
+   }
+   ret=_m2xsc->postDeviceUpdates(id, _pos, _streamNames,
+                               _counts, _ats, _values);
+   digitalWrite(SEND_LED,0); 
+   return ret;
 }
 
 void Iot::showCounters()

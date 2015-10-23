@@ -3,15 +3,18 @@
 
 #include <Time.h>
 #include "adlimit.h"
+#include "Iot.h"
 
 class heatStore {
 public:
   heatStore(int port,float target,class adlimit *adl,float target2=0,float hysteresis=2,int latency=30);
   void chkTarget(time_t ts,float v);
   void refresh(time_t ts,float current);
+  void setIot(Iot *iot);
   
 private:
   int _port;
+  Iot  *_iot;
   int _state;
   int _latency;
   time_t _lastChk;

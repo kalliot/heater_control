@@ -1,4 +1,5 @@
 #include "bypassvalve.h"
+#include "Iot.h"
 
 
 bypassValve::bypassValve(void) {
@@ -36,7 +37,8 @@ void bypassValve::setGuide(float val) {
   }
 }
 
-int bypassValve::turnBypass(time_t ts) {
+
+int bypassValve::turnBypass(time_t ts,Iot *iot) {
   int ret=1;
   float diff;
   long turntime;
@@ -57,10 +59,14 @@ int bypassValve::turnBypass(time_t ts) {
   else if (turntime < _minTurnTime)
     turntime=_minTurnTime;
 
-  if (diff > _sensitivity)
+  if (diff > _sensitivity) {
     _sched->oscillate(_up,turntime,LOW,1);
-  else if (diff < (-1.0 * _sensitivity))
+    iot->toggle("radiator_up",1,turntime);
+  }
+  else if (diff < (-1.0 * _sensitivity)) {
     _sched->oscillate(_dn,turntime,LOW,1);
+    iot->toggle("radiator_dn",1,turntime);
+  }
   else
     ret=0;
   return ret;

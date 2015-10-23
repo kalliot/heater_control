@@ -17,6 +17,11 @@ heatStore::heatStore(int port,float target,class adlimit *adl,float target2,floa
   _lastChk=0;
 }
 
+void heatStore::setIot(Iot *iot)
+{
+  _iot=iot;
+}
+
 void heatStore::chkTarget(time_t ts,float v)
 {
   if (_adl->compare(v))
@@ -35,10 +40,12 @@ void heatStore::refresh(time_t ts,float current)
     if (current < _target && _state==0) {
       _state = 1;
       digitalWrite(_port,1);
+      _iot->toggle("boiler_on",1,-1);
     }
     if (current > _target + _hysteresis && _state==1) {
       _state = 0;
       digitalWrite(_port,0);
+      _iot->toggle("boiler_on",0,-1);
     }
   }
 }

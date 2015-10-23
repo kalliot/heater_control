@@ -4,11 +4,11 @@
 #include <Timer.h>
 #include <Wire.h>
 #include <EthernetUdp.h>
-#include <DS1307RTC.h>
 #include <stdio.h>
 #include <jsonlite.h>
 #include "heater_control.h"
 #include "LedControl.h"
+#include <PubNub.h>
 #include "spi7seg.h"
 #include "M2XStreamClient.h"
 #include "Iot.h"
@@ -71,7 +71,7 @@ struct condition {
 Timer sched;
 adlimit adl1(25.0);
 bypassValve bp1;
-heatStore hs1(12,25,&adl1,24,1.5,30);
+heatStore hs1(BOILER_LED,25,&adl1,24,1.5,30);
 
 // counters are kept in array, this for preparing to have more of them.
 
@@ -108,11 +108,14 @@ void setup() {
   int succ;
 
   Serial.begin(9600);
-  pinMode(13, OUTPUT);
-  pinMode(12, OUTPUT);
-  pinMode(30, OUTPUT);
-  pinMode(31, OUTPUT);
+  pinMode(SEND_LED, OUTPUT);
+  pinMode(CHK_LED, OUTPUT);
+  pinMode(BOILER_LED, OUTPUT);
+  pinMode(UP_LED, OUTPUT);
+  pinMode(DN_LED, OUTPUT);
+  pinMode(EL_LED, OUTPUT);
   Serial.println("Start");
+  led_check();
   lc.setIntensity(0,1);
   s7s.number(0,0,8888);
   s7s.number(0,1,8888);
@@ -127,7 +130,7 @@ void setup() {
   conditions[2].source = adinput.getNamed("ambient");
   conditions[3].source = adinput.getNamed("radiator");
 
-  bp1 = bypassValve(&sched,"heating",&adinput.getNamed("radiator")->measured.analog,30,31,1000,30,0.3,800,10000);
+  bp1 = bypassValve(&sched,"heating",&adinput.getNamed("radiator")->measured.analog,UP_LED,DN_LED,1000,30,0.3,800,10000);
 
   radiatorConverter.add(-30,33);
   radiatorConverter.add(-20,31);
@@ -137,6 +140,7 @@ void setup() {
   radiatorConverter.add( 20, 2);
   radiatorConverter.add( 30, 0);
   bp1.setConverter(&radiatorConverter);
+  hs1.setIot(&iot);
   // preparing for configurable channels.
   // in future the amount of channels will be specified with config
   // and this amount with channel names are saved to eeprom.
@@ -145,7 +149,6 @@ void setup() {
     return;
   }
   eepShow();
-  setTime(RTC.get());
   succ=Ethernet.begin(mac);
   if (!succ) {
     Serial.println("Failed to configure Ethernet using DHCP");
@@ -162,7 +165,6 @@ void setup() {
     }
     Serial.println();
   }
-
   adinput.reset();
   ipserver.begin();
   Udp.begin(localPort);
@@ -181,6 +183,17 @@ void setup() {
   }
 }
 
+void led_check()
+{
+  for (int k=0;k<3;k++) {
+    for (int i=44;i<50;i++) {
+      digitalWrite(i,1); 
+      delay(40);
+      digitalWrite(i,0); 
+    }
+  }
+}
+    
 void loop()
 {
   sched.update();
@@ -248,7 +261,7 @@ void processSensors()
   time_t ts=now();
 
   if (adinput.read()) {
-    sched.oscillate(13,150, LOW,2);
+    sched.oscillate(CHK_LED,150, LOW,2);
     cntTimeouts=chkCntTimeouts(ts,false);
     cntChanges=chkCntChanged();
     timeouts=adinput.isTimeout(ts, (cntTimeouts || cntChanges));
@@ -301,14 +314,14 @@ void evaluateCondition(struct ad *source,time_t ts)
       case METHOD_ANALOG:
 	bpv=(class bypassValve *) conditions[i].target;
 	bpv->setGuide(value);
-	if (!bpv->turnBypass(ts))
+	if (!bpv->turnBypass(ts,&iot))
 	  conditions[i].source->flags &= ~FLAGS_EVALUATE;
 	break;
 
       case METHOD_ANALOG_RECHECK:
 	bpv=(class bypassValve *) conditions[i].target;
 	conditions[i].source->flags &= ~FLAGS_EVALUATE;
-	bpv->turnBypass(ts);
+	bpv->turnBypass(ts,&iot);
 	break;
       }
     }
@@ -457,6 +470,8 @@ void sendM2X(void)
   if (timeStatus() == timeNotSet)
     return;
   ts=now();
+  if (ts < 1262296800)
+    return;
   buildTime(ts,chbuf);
   iot.reset();
 
@@ -491,21 +506,16 @@ void sendM2X(void)
       Serial.println("feed id not known");
       return;
     }
-    digitalWrite(13,1); // turn led on during iot send
-    
     iot.showCounters();
     iot.showStreamnames();
     iot.showTimes();
     iot.showValues();
 
     response = iot.send(feedId);
-    digitalWrite(13,0); // led off
     Serial.print("M2x client response code: ");
     Serial.println(response);
   }
   else
     Serial.print(".");
 }
-
-
 

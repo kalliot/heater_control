@@ -13,13 +13,17 @@ class Iot {
   void addValue(float value,char *ts);
   void next();
   int  getRecCnt();
-  int send(char *id);
+  int  toggle(char *name,int state,int duration);
+  int  send(char *id);
   void showCounters();
   void showStreamnames();
   void showTimes();
   void showValues();
  private:
   M2XStreamClient *_m2xsc; 
+  char pubkey[45];
+  char subkey[45];
+  char channel[20];
   const char **_streamNames;
   int *_counts;
   const char **_ats;

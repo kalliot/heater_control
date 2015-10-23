@@ -5,6 +5,7 @@
 #include <Time.h>
 #include <Timer.h>
 #include "conversion.h"
+#include "Iot.h"
 
 class bypassValve {
  public:
@@ -14,7 +15,7 @@ class bypassValve {
   void set(Timer *sched,char *name,float *actual,int up,int dn,int timeMultiplier,
 	   int latency,float sensitivity,int minTurnTime,int maxTurnTime);
   void setGuide(float val);
-  int turnBypass(time_t ts);
+  int turnBypass(time_t ts,Iot *iot);
   void setConverter(conversion *c);
 
  private:
