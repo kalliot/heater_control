@@ -3,6 +3,7 @@
 
 #include <EthernetUdp.h>
 
+
 IPAddress timeServer(132, 163, 4, 101); // time-a.timefreq.bldrdoc.gov
 // IPAddress timeServer(132, 163, 4, 102); // time-b.timefreq.bldrdoc.gov
 // IPAddress timeServer(132, 163, 4, 103); // time-c.timefreq.bldrdoc.gov
@@ -15,6 +16,7 @@ time_t getNtpTime()
 {
   while (Udp.parsePacket() > 0) ; // discard any previously received packets
   Serial.println("Transmit NTP Request");
+  digitalWrite(SEND_LED,1);
   sendNTPpacket(timeServer);
   uint32_t beginWait = millis();
   while (millis() - beginWait < 1500) {
@@ -28,9 +30,11 @@ time_t getNtpTime()
       secsSince1900 |= (unsigned long)packetBuffer[41] << 16;
       secsSince1900 |= (unsigned long)packetBuffer[42] << 8;
       secsSince1900 |= (unsigned long)packetBuffer[43];
+      digitalWrite(SEND_LED,0);
       return secsSince1900 - 2208988800UL + timeZone * SECS_PER_HOUR;
     }
   }
+  digitalWrite(SEND_LED,0);
   Serial.println("No NTP Response :-(");
   return 0; // return 0 if unable to get the time
 }

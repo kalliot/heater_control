@@ -74,8 +74,8 @@ void eepReadAll()
 
   if (eepromsetup.id==VERNUM) {
      Serial.println("valid");
-     strcpy(feedId,eepromsetup.m2xfeed);
-     strcpy(m2xKey,eepromsetup.m2xkey);
+     //strcpy(feedId,eepromsetup.m2xfeed);
+     //strcpy(m2xKey,eepromsetup.m2xkey);
   }
   else {
     Serial.println("invalid, resetting default values");

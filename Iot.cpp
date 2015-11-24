@@ -7,13 +7,10 @@
 #include <PubNub.h>
 #include "heater_control.h"
 #include "Iot.h"	
-#include "M2XStreamClient.h"
 
 
-
-Iot::Iot(M2XStreamClient *m2xsc) 
+Iot::Iot() 
 {
-  _m2xsc = m2xsc;
   strcpy(pubkey,"demo");
   strcpy(subkey,"demo");
   strcpy(channel,"demo_tutorial");
@@ -95,7 +92,7 @@ int Iot::toggle(char *name,int state,int duration)
 
 }
 
-int Iot::send(char *id)
+int Iot::send()
 {
    EthernetClient *pclient;
 
@@ -129,10 +126,8 @@ int Iot::send(char *id)
       else
          pclient->stop();
    }
-   ret=_m2xsc->postDeviceUpdates(id, _pos, _streamNames,
-                               _counts, _ats, _values);
    digitalWrite(SEND_LED,0); 
-   return ret;
+   return 202;
 }
 
 void Iot::showCounters()

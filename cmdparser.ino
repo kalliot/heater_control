@@ -162,7 +162,7 @@ static void ipsetio(EthernetClient client,int argc,char *argv[])
   int port=atoi(argv[1]);
   int value=atoi(argv[2]);
 
-  if (port > 11 && port < 14) {
+  if (port > 11 && port < 54) {
     digitalWrite(port,value);
     reply2remote(client,argv[0],":OK","");
     return;

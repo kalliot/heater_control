@@ -5,12 +5,11 @@
 #include <Wire.h>
 #include <EthernetUdp.h>
 #include <stdio.h>
-#include <jsonlite.h>
+//#include <jsonlite.h>
 #include "heater_control.h"
 #include "LedControl.h"
 #include <PubNub.h>
 #include "spi7seg.h"
-#include "M2XStreamClient.h"
 #include "Iot.h"
 #include "bypassvalve.h"
 #include "heatstore.h"
@@ -24,10 +23,7 @@
 
 
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
-// mx2 credentials are stored with a tcpip config connection
-// and saved to eeprom. check eepromsetup.ino
-char feedId[33] = ""; // Feed you want to push to
-char m2xKey[33] = ""; // Your M2X access key
+
 
 // interrupt counter is not bound very elegantly to
 // cntArr, I think about this later.
@@ -92,13 +88,11 @@ struct condition conditions[]= {
 
 int measTimeout=1800;
 
-EthernetClient client;
-M2XStreamClient m2xClient(&client, m2xKey,idler);
 EthernetServer ipserver = EthernetServer(9000);
 EthernetClient ipclient;
 EthernetUDP Udp;
 unsigned int localPort = 8888;  // local port to listen for UDP packets
-Iot iot(&m2xClient);
+Iot iot;
 AdInput adinput(measTimeout);
 int adReadCnt;
 LedControl lc=LedControl(37,33,35,1);
@@ -149,7 +143,9 @@ void setup() {
     return;
   }
   eepShow();
+  digitalWrite(SEND_LED,1);
   succ=Ethernet.begin(mac);
+  digitalWrite(SEND_LED,0);
   if (!succ) {
     Serial.println("Failed to configure Ethernet using DHCP");
     Ethernet.begin(mac, ip, gateway, subnet);
@@ -502,16 +498,12 @@ void sendM2X(void)
 
   // send part
   if (iot.getRecCnt()) {
-    if (feedId[0]==0) {
-      Serial.println("feed id not known");
-      return;
-    }
     iot.showCounters();
     iot.showStreamnames();
     iot.showTimes();
     iot.showValues();
 
-    response = iot.send(feedId);
+    response = iot.send();
     Serial.print("M2x client response code: ");
     Serial.println(response);
   }

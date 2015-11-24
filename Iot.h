@@ -2,11 +2,10 @@
 #define __Iot__
 
 #include <Arduino.h>
-#include "M2XStreamClient.h"
 
 class Iot {
  public:
-  Iot(M2XStreamClient *m2xsc);
+  Iot();
   boolean setBufferSizes(int s);
   void reset();
   void name(char *name);
@@ -14,13 +13,12 @@ class Iot {
   void next();
   int  getRecCnt();
   int  toggle(char *name,int state,int duration);
-  int  send(char *id);
+  int  send();
   void showCounters();
   void showStreamnames();
   void showTimes();
   void showValues();
  private:
-  M2XStreamClient *_m2xsc; 
   char pubkey[45];
   char subkey[45];
   char channel[20];
