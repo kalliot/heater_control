@@ -10,7 +10,7 @@
 #include <EEPROM.h>
 #include "eepromsetup.h"
 
-#define VERNUM 0x100
+#define VERNUM 0x102
 #define EEPROM_MAX 4096
 
 struct eepromsetup eepromsetup;
@@ -21,10 +21,12 @@ void eepShow()
   Serial.println(sizeof(eepromsetup));
   Serial.print("measTimeout is ");
   Serial.println(eepromsetup.meastimeout);
-  Serial.print("m2xfeed is ");
-  Serial.println(eepromsetup.m2xfeed);
-  Serial.print("m2xkey is ");
-  Serial.println(eepromsetup.m2xkey);
+  Serial.print("publish key is ");
+  Serial.println(eepromsetup.pubkey);
+  Serial.print("subscribe key is ");
+  Serial.println(eepromsetup.subkey);
+  Serial.print("channel is ");
+  Serial.println(eepromsetup.channel);
 
   for (int i=0;i<4;i++) {
     Serial.print(i);
@@ -74,8 +76,9 @@ void eepReadAll()
 
   if (eepromsetup.id==VERNUM) {
      Serial.println("valid");
-     //strcpy(feedId,eepromsetup.m2xfeed);
-     //strcpy(m2xKey,eepromsetup.m2xkey);
+     iot.setPubkey(eepromsetup.pubkey);
+     iot.setSubkey(eepromsetup.subkey);
+     iot.setChannel(eepromsetup.channel);
   }
   else {
     Serial.println("invalid, resetting default values");
@@ -83,10 +86,6 @@ void eepReadAll()
   }
 }
 
-#define BOILER  0  
-#define AMBIENT 1
-#define HOTHOUSEWATER 2
-#define RADIATOR  3
 
 void eepWriteAll()
 {
@@ -104,8 +103,9 @@ void eepWriteAll()
   } while ((ad = adinput.getNext(ad)) != NULL);  
   eepromsetup.id=VERNUM;
   eepromsetup.meastimeout=measTimeout;
-  // feedId and key need not to be copied, they are stored directly
-  // to eepromsetup
+  strcpy(eepromsetup.pubkey,iot.getPubkey());
+  strcpy(eepromsetup.subkey,iot.getSubkey());
+  strcpy(eepromsetup.channel,iot.getChannel());
   blockwrite(&eepromsetup,0,sizeof(eepromsetup));
 }
 		

@@ -12,8 +12,9 @@ struct adsetup {
 struct eepromsetup {
   int id;
   int meastimeout;
-  char m2xfeed[33];
-  char m2xkey[33];
+  char pubkey[45];
+  char subkey[45];
+  char channel[20];
   struct adsetup ad[4];
 };
 

@@ -15,8 +15,9 @@ static struct ipcmd commands[] = {
   {"events",   1, ipevents},
   {"adcalibr", 4, ipadcalibr},
   {"timeout",  2, iptimeout},
-  {"m2xfeed",  1, ipm2xfeed},
-  {"m2xkey",   1, ipm2xkey},
+  {"pubkey",   1, ippubkey},
+  {"subkey",   1, ipsubkey},
+  {"channel",  1, ipchannel},
   {"savesetup",0, ipsavesetup},
   {"showsetup",0, ipshowsetup},
   {"",0,NULL}
@@ -86,10 +87,10 @@ static void ipshowsetup(EthernetClient client,int argc,char *argv[])
   char str[12];
   struct ad *ad;
 
-  client.write("m2xfeed,");
-  client.write(eepromsetup.m2xfeed);
-  client.write("\nm2xkey,");
-  client.write(eepromsetup.m2xkey);
+  client.write("pubkey,");
+  client.write(eepromsetup.pubkey);
+  client.write("\nsubkey,");
+  client.write(eepromsetup.subkey);
   client.write("\n");
   client.write("timeout,iot,");
   client.write(itoa(measTimeout,str,10));
@@ -143,16 +144,23 @@ static void iptimeout(EthernetClient client,int argc,char *argv[])
   return;
 }
 
-static void ipm2xfeed(EthernetClient client,int argc,char *argv[])
+static void ippubkey(EthernetClient client,int argc,char *argv[])
 {
-  memcpy(eepromsetup.m2xfeed,argv[1],33);
+  iot.setPubkey(argv[1]);
   reply2remote(client,argv[0],":OK","");
   return;
 }
 
-static void ipm2xkey(EthernetClient client,int argc,char *argv[])
+static void ipchannel(EthernetClient client,int argc,char *argv[])
 {
-  memcpy(eepromsetup.m2xkey,argv[1],33);
+  iot.setChannel(argv[1]);
+  reply2remote(client,argv[0],":OK","");
+  return;
+}
+
+static void ipsubkey(EthernetClient client,int argc,char *argv[])
+{
+  iot.setSubkey(argv[1]);
   reply2remote(client,argv[0],":OK","");
   return;
 }

@@ -114,6 +114,8 @@ void setup() {
   s7s.number(0,0,8888);
   s7s.number(0,1,8888);
   eepReadAll();
+  eepShow();
+  iot.start();
   adinput.add(2,"boiler",       0.5, 174, 21.0, 935, 100.0);
   adinput.add(3,"ambient",      0.3, 372, 2.2,  964,  36.5);
   adinput.add(4,"hothousewater",0.5, 7,   21.0, 1023,100.0);
@@ -142,7 +144,6 @@ void setup() {
     Serial.println("Iot init failed\n");
     return;
   }
-  eepShow();
   digitalWrite(SEND_LED,1);
   succ=Ethernet.begin(mac);
   digitalWrite(SEND_LED,0);

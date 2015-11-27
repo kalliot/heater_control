@@ -10,12 +10,44 @@
 
 
 Iot::Iot() 
-{
-  strcpy(pubkey,"demo");
-  strcpy(subkey,"demo");
-  strcpy(channel,"demo_tutorial");
-  PubNub.begin(pubkey, subkey);
+{ 
   return;
+}
+
+void Iot::start(void)
+{
+  PubNub.begin(pubkey, subkey);
+}
+
+void Iot::setPubkey(char *name)
+{
+  strcpy(pubkey,name);
+}
+
+void Iot::setSubkey(char *name)
+{
+  strcpy(subkey,name);
+}
+
+void Iot::setChannel(char *name)
+{
+  strcpy(channel,name);
+}
+
+
+char * Iot::getPubkey(void)
+{
+  return pubkey;
+}
+
+char * Iot::getSubkey(void)
+{
+  return subkey;
+}
+
+char * Iot::getChannel(void)
+{
+  return channel;
 }
 
 boolean Iot::setBufferSizes(int s)

@@ -8,6 +8,7 @@ class Iot {
   Iot();
   boolean setBufferSizes(int s);
   void reset();
+  void start();
   void name(char *name);
   void addValue(float value,char *ts);
   void next();
@@ -18,6 +19,13 @@ class Iot {
   void showStreamnames();
   void showTimes();
   void showValues();
+  void setPubkey(char *name);
+  void setSubkey(char *name);
+  void setChannel(char *name);
+  char *getPubkey(void);
+  char *getSubkey(void);
+  char *getChannel(void);
+
  private:
   char pubkey[45];
   char subkey[45];
