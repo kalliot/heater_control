@@ -65,9 +65,9 @@ struct condition {
 
 
 Timer sched;
-adlimit adl1(25.0);
+adlimit adl1(38.0);
 bypassValve bp1;
-heatStore hs1(BOILER_LED,25,&adl1,24,1.5,30);
+heatStore hs1(BOILER_LED,62,&adl1,67,4.0,30);
 
 // counters are kept in array, this for preparing to have more of them.
 
@@ -116,10 +116,10 @@ void setup() {
   eepReadAll();
   eepShow();
   iot.start();
-  adinput.add(2,"boiler",       0.5, 174, 21.0, 935, 100.0);
-  adinput.add(3,"ambient",      0.3, 372, 2.2,  964,  36.5);
-  adinput.add(4,"hothousewater",0.5, 7,   21.0, 1023,100.0);
-  adinput.add(5,"radiator",     0.3, 7,   21.0, 539,  36.5);
+  adinput.add(10,"boiler",       0.7, 94,  0.0,  1023, 80.0);
+  adinput.add(11,"ambient",      0.3, 574, 0.0,  1020, 33.0);
+  adinput.add(12,"hothousewater",0.7, 109, 20.7, 1011, 52.9);
+  adinput.add(13,"radiator",     0.3, 247, 21.0, 800,  36.5);
 
   conditions[0].source = adinput.getNamed("boiler");
   conditions[1].source = adinput.getNamed("hothousewater");
@@ -182,13 +182,11 @@ void setup() {
 
 void led_check()
 {
-  for (int k=0;k<3;k++) {
     for (int i=44;i<50;i++) {
       digitalWrite(i,1); 
       delay(40);
       digitalWrite(i,0); 
     }
-  }
 }
     
 void loop()

@@ -1,4 +1,3 @@
-#include <Arduino.h>
 #include "heatstore.h"
 
 
@@ -7,7 +6,8 @@ heatStore::heatStore(int port,float target,class adlimit *adl,float target2,floa
   _port=port;
   _target=target;
   _originalTarget=target;
-  if (_target2==0)
+  _adl=adl;
+  if (target2==0)
     _target2=target;
   else
     _target2=target2;
