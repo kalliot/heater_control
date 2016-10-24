@@ -12,6 +12,15 @@ Getting Started
 4. Create account for [AT&T's M2X] (https://m2x.att.com/developer/get-started) , to get your own feedId and access key.
 5. Get arduino libraries, atleast for Ethernet.
 
+Pictures
+===========
+![Simulation](http://www.skallio.com/boiler/test_setup.jpg)
+
+
+Screenshots
+===========
+![Gauges](http://www.skallio.com/boiler/gauges.png)
+
 
 LICENSE
 =======
