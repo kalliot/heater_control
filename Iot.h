@@ -30,6 +30,7 @@ class Iot {
   char pubkey[45];
   char subkey[45];
   char channel[20];
+  int  _errstate;
   const char **_streamNames;
   int *_counts;
   const char **_ats;

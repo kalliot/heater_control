@@ -16,6 +16,7 @@ Iot::Iot()
 
 void Iot::start(void)
 {
+  _errstate=0;
   PubNub.begin(pubkey, subkey);
 }
 
@@ -132,6 +133,11 @@ int Iot::send()
    int i,j,ret;
    char s[16];
 
+   if (_errstate) {
+     _errstate--;
+     if (_errstate)
+       return 0;
+   }
    for (i=0;i<_pos;i++) {
        strcat(msg,"{\"name\":\"");
        strcat(msg,_streamNames[i]);
@@ -150,13 +156,19 @@ int Iot::send()
       Serial.print("Iot::send pubnub: ");
       Serial.println(msg);
 
-      digitalWrite(SEND_LED,1); 
+      digitalWrite(SEND_LED,1);
       pclient = PubNub.publish(channel, msg);
       if (!pclient) {
          Serial.println("publishing error");
+	 if (_errstate==0) {
+	   _errstate=12;
+	   digitalWrite(CHK_LED,1);
+	 }
       }
-      else
-         pclient->stop();
+      else {
+	digitalWrite(CHK_LED,0);
+	pclient->stop();
+      }
    }
    digitalWrite(SEND_LED,0); 
    return 202;

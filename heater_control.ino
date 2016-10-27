@@ -5,7 +5,6 @@
 #include <Wire.h>
 #include <EthernetUdp.h>
 #include <stdio.h>
-//#include <jsonlite.h>
 #include "heater_control.h"
 #include "LedControl.h"
 #include <PubNub.h>
@@ -149,7 +148,7 @@ void setup() {
   digitalWrite(SEND_LED,0);
   if (!succ) {
     Serial.println("Failed to configure Ethernet using DHCP");
-    Ethernet.begin(mac, ip, gateway, subnet);
+    digitalWrite(CHK_LED,1);
   }
   else {
     Serial.print("ip address is ");
@@ -256,7 +255,6 @@ void processSensors()
   time_t ts=now();
 
   if (adinput.read()) {
-    sched.oscillate(CHK_LED,150, LOW,2);
     cntTimeouts=chkCntTimeouts(ts,false);
     cntChanges=chkCntChanged();
     timeouts=adinput.isTimeout(ts, (cntTimeouts || cntChanges));
