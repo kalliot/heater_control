@@ -23,6 +23,7 @@ void bypassValve::set(Timer *sched,char *name,float *actual,int up,int dn,int ti
   _maxTurnTime=maxTurnTime;
   _targetTemp=-273;
   _prevVal=-273;
+  _upmsec=0;
 }
 
 void bypassValve::setConverter(conversion *c)
@@ -33,6 +34,8 @@ void bypassValve::setConverter(conversion *c)
 void bypassValve::setGuide(float val) {
   if (_prevVal != val) {
     _targetTemp=_converter->resolve(val);
+    Serial.print("Target temp is ");
+    Serial.println(_targetTemp);
     _prevVal=val;
   }
 }
@@ -45,25 +48,37 @@ int bypassValve::turnBypass(time_t ts,Iot *iot) {
 
   if (*_actualTemp==-273) return ret;
 
-  if ((ts - _changed) > _latency-1)
-    _changed =ts;
-  else {
-    return ret;
-  }
-
   diff = _targetTemp - *_actualTemp;
-  turntime=abs(diff) * _timeMultiplier;
+  turntime=_minTurnTime + abs(diff) * _timeMultiplier;
 
   if (turntime > _maxTurnTime)
     turntime=_maxTurnTime;
-  else if (turntime < _minTurnTime)
-    turntime=_minTurnTime;
 
   if (diff > _sensitivity) {
+    if ((ts - _changed) > _latency-1)
+      _changed =ts;
+    else {
+      return ret;
+    }
+    _upmsec+=turntime;
+    Serial.print("_upmsec=");
+    Serial.println(_upmsec);
     _sched->oscillate(_up,turntime,LOW,1);
     iot->toggle("radiator_up",1,turntime);
   }
   else if (diff < (-1.0 * _sensitivity)) {
+    if (_upmsec > _minTurnTime) {
+      turntime=_upmsec * 0.3;
+      _changed = ts;
+      _upmsec=0;
+    }
+    else {
+      if ((ts - _changed) > ((_latency*1.3)-1)) // latency is 30% bigger when turning down
+	_changed =ts;
+      else {
+	return ret;
+      }
+    }
     _sched->oscillate(_dn,turntime,LOW,1);
     iot->toggle("radiator_dn",1,turntime);
   }

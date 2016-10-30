@@ -41,6 +41,7 @@ class AdInput {
   void evaluateConditions(void);
   boolean isTimeout(time_t ts,boolean advance);
   void buildIot(char *chbuf,Iot *iot);
+  int  getDirection(struct Node *n)
   static int _evaluateCondition(struct Node *n,void *data);
   static int _calc(struct Node *n,void *data);
   static int _read(struct Node *n,void *data);

@@ -25,6 +25,7 @@ class bypassValve {
   time_t _changed;
   int _up;
   int _dn;
+  long _upmsec;
   float _targetTemp;
   int _timeMultiplier;
   int _latency;         // seconds, how long does it take after up, or down op the realise change in targetAd.

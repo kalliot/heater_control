@@ -94,6 +94,17 @@ int AdInput::_calc(struct Node *n,void *data)
   return 0;
 }
 
+// returns negative, if value is decreasing,
+// positive, if increasing
+// and zero when no change.
+
+int AdInput::getDirection(struct Node *n)
+{
+  struct ad *a = (struct ad *) n;
+
+  return a->prev.digital - a->measured.digital;
+}
+
 void AdInput::calc(void)
 {
   time_t ts=now();

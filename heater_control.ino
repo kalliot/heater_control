@@ -75,7 +75,7 @@ struct cnt cntArr[] = {                //prev prevsnd    diff   factor  scale  m
   {-1,"water",       0,0,0,0,irqh1,     0,0.0, 0,0.0,   0,0.1, 0,0.55, 50,1.0,  0,0.0}
 };
 
-conversion radiatorConverter(16);
+conversion radiatorConverter(19);
 
 struct condition conditions[]= {
   {0,NULL,&hs1, METHOD_HEATSTORE},               
@@ -125,7 +125,7 @@ void setup() {
   conditions[2].source = adinput.getNamed("ambient");
   conditions[3].source = adinput.getNamed("radiator");
 
-  bp1 = bypassValve(&sched,"heating",&adinput.getNamed("radiator")->measured.analog,UP_LED,DN_LED,1000,30,0.3,800,10000);
+  bp1 = bypassValve(&sched,"heating",&adinput.getNamed("radiator")->measured.analog,UP_LED,DN_LED,1000,40,0.4,1000,10000);
 
   radiatorConverter.add(-30,33);
   radiatorConverter.add(-20,31);
