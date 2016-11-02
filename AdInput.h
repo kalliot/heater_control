@@ -16,7 +16,10 @@ struct ad {
   int port;
   char *name;
   int flags;
+  time_t prev_ts;
   time_t last_send;
+  long direction;
+  int angular_velocity;
   struct dig2a prev;
   struct dig2a diff;
   struct dig2a mincal;
@@ -41,7 +44,6 @@ class AdInput {
   void evaluateConditions(void);
   boolean isTimeout(time_t ts,boolean advance);
   void buildIot(char *chbuf,Iot *iot);
-  int  getDirection(struct Node *n)
   static int _evaluateCondition(struct Node *n,void *data);
   static int _calc(struct Node *n,void *data);
   static int _read(struct Node *n,void *data);

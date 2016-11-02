@@ -6,13 +6,14 @@
 #include <Timer.h>
 #include "conversion.h"
 #include "Iot.h"
+#include "AdInput.h"
 
 class bypassValve {
  public:
   bypassValve(void);
-  bypassValve(Timer *sched,char *name,float *actual,int up,int dn,int timeMultiplier,
+  bypassValve(Timer *sched,char *name,struct ad *ad,int up,int dn,int timeMultiplier,
 	      int latency,float sensitivity,int minTurnTime,int maxTurnTime);
-  void set(Timer *sched,char *name,float *actual,int up,int dn,int timeMultiplier,
+  void set(Timer *sched,char *name,struct ad *ad,int up,int dn,int timeMultiplier,
 	   int latency,float sensitivity,int minTurnTime,int maxTurnTime);
   void setGuide(float val);
   int turnBypass(time_t ts,Iot *iot);
@@ -20,7 +21,7 @@ class bypassValve {
 
  private:
   char *_name;
-  float *_actualTemp;
+  struct ad *_ad;
   Timer *_sched;
   time_t _changed;
   int _up;

@@ -19,6 +19,7 @@ int AdInput::add(int port,char *name,float diff,
 {
   struct ad *a;
   int addr;
+  time_t ts=now();
 
   a = (struct ad *) malloc(sizeof(struct ad));
   if (a!=NULL) {
@@ -34,6 +35,7 @@ int AdInput::add(int port,char *name,float diff,
     a->maxcal.digital  = maxd;
     a->maxcal.analog   = maxf;
     a->measured.analog = -273;
+    a->prev_ts         = ts;
     a->delta.digital   = a->maxcal.digital - a->mincal.digital;
     a->delta.analog    = a->maxcal.analog - a->mincal.analog;
     a->n.ln_Name       = a->name;
@@ -77,33 +79,37 @@ int AdInput::_calc(struct Node *n,void *data)
 {
   int ddelta;
   int digital;
+  int prev_digital;
   float adelta;
   time_t *ts=(time_t *) data;
   struct ad *a=(struct ad *) n;
+  long prev_direction;
 
   if (a->flags & FLAGS_DATACHANGE) {
+    prev_digital = a->prev.digital / AD_SAMPLECNT;
     digital  = a->measured.digital / AD_SAMPLECNT;
     ddelta   = a->delta.digital;
     adelta   = a->delta.analog;
   
     a->measured.analog  = a->mincal.analog + (digital - a->mincal.digital) * adelta / ddelta;
+    a->prev_ts          = a->last_send;
     a->last_send        = *ts;
     a->prev.analog      = a->measured.analog;
     a->prev.digital     = a->measured.digital;
+
+    prev_direction = a->direction;
+    a->direction = (3600 / (a->last_send - a->prev_ts)) * (digital - prev_digital); // how many digital steps per hour.
+    a->angular_velocity = a->direction - prev_direction;
+    Serial.print("----> ");
+    Serial.print(a->name);
+    Serial.print(" direction=");
+    Serial.print(a->direction);
+    Serial.print(", angular_velocity=");
+    Serial.println(a->angular_velocity);
   }
   return 0;
 }
 
-// returns negative, if value is decreasing,
-// positive, if increasing
-// and zero when no change.
-
-int AdInput::getDirection(struct Node *n)
-{
-  struct ad *a = (struct ad *) n;
-
-  return a->prev.digital - a->measured.digital;
-}
 
 void AdInput::calc(void)
 {

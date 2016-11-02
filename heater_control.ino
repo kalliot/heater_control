@@ -118,19 +118,19 @@ void setup() {
   adinput.add(10,"boiler",       0.7, 94,  0.0,  1023, 80.0);
   adinput.add(11,"ambient",      0.3, 574, 0.0,  1020, 33.0);
   adinput.add(12,"hothousewater",0.7, 109, 20.7, 1011, 52.9);
-  adinput.add(13,"radiator",     0.3, 247, 21.0, 800,  36.5);
+  adinput.add(13,"radiator",     0.2, 247, 21.0, 800,  36.5);
 
   conditions[0].source = adinput.getNamed("boiler");
   conditions[1].source = adinput.getNamed("hothousewater");
   conditions[2].source = adinput.getNamed("ambient");
   conditions[3].source = adinput.getNamed("radiator");
 
-  bp1 = bypassValve(&sched,"heating",&adinput.getNamed("radiator")->measured.analog,UP_LED,DN_LED,1000,40,0.4,1000,10000);
+  bp1 = bypassValve(&sched,"heating",adinput.getNamed("radiator"),UP_LED,DN_LED,1000,90,0.01,1000,10000);
 
-  radiatorConverter.add(-30,33);
-  radiatorConverter.add(-20,31);
-  radiatorConverter.add(-10,28);
-  radiatorConverter.add(  0,21);
+  radiatorConverter.add(-30,32);
+  radiatorConverter.add(-20,30);
+  radiatorConverter.add(-10,27);
+  radiatorConverter.add(  0,20);
   radiatorConverter.add( 10,11);
   radiatorConverter.add( 20, 2);
   radiatorConverter.add( 30, 0);
