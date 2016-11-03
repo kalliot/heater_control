@@ -5,6 +5,8 @@
 #include "Iot.h"
 #include "lists.h"
 
+#define AD_SAMPLECNT 10
+
 struct dig2a
 {
   int digital;
@@ -20,6 +22,8 @@ struct ad {
   time_t last_send;
   long direction;
   int angular_velocity;
+  int sampleindex;
+  int samples[AD_SAMPLECNT];
   struct dig2a prev;
   struct dig2a diff;
   struct dig2a mincal;
@@ -51,6 +55,7 @@ class AdInput {
   static int _reset(struct Node *n,void *data);
   static int _buildIot(struct Node *n,void *data);
   static int _timeout(struct Node *n,void *data);
+  static int _filter(struct ad *a);
  private:
   List _adList;
   int _samples;

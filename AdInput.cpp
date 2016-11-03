@@ -2,8 +2,6 @@
 #include "AdInput.h"
 
 
-#define AD_SAMPLECNT 10
-
 int     AdInput::_currTimeout=0;
 boolean AdInput::_isTimeout=false;
 boolean AdInput::_isChanged=false;
@@ -39,7 +37,7 @@ int AdInput::add(int port,char *name,float diff,
     a->delta.digital   = a->maxcal.digital - a->mincal.digital;
     a->delta.analog    = a->maxcal.analog - a->mincal.analog;
     a->n.ln_Name       = a->name;
-    a->diff.digital    = AD_SAMPLECNT * a->delta.digital / a->delta.analog * a->diff.analog;
+    a->diff.digital    = a->delta.digital / a->delta.analog * a->diff.analog;
     _adList.addtail((struct Node *)a);
     _count++;
     return 1;
@@ -71,34 +69,33 @@ int AdInput::_read(struct Node *n,void *data)
 {
   struct ad *a=(struct ad *) n;
 
-  a->measured.digital += analogRead(a->port);
+  if (a->sampleindex >= AD_SAMPLECNT)
+    return 1;
+  a->samples[a->sampleindex] = analogRead(a->port);
+  a->sampleindex++;
   return 0;
 }
 
 int AdInput::_calc(struct Node *n,void *data)
 {
   int ddelta;
-  int digital;
-  int prev_digital;
   float adelta;
   time_t *ts=(time_t *) data;
   struct ad *a=(struct ad *) n;
   long prev_direction;
 
   if (a->flags & FLAGS_DATACHANGE) {
-    prev_digital = a->prev.digital / AD_SAMPLECNT;
-    digital  = a->measured.digital / AD_SAMPLECNT;
+    a->prev.digital = a->measured.digital;
     ddelta   = a->delta.digital;
     adelta   = a->delta.analog;
   
-    a->measured.analog  = a->mincal.analog + (digital - a->mincal.digital) * adelta / ddelta;
+    a->measured.analog  = a->mincal.analog + (a->measured.digital - a->mincal.digital) * adelta / ddelta;
     a->prev_ts          = a->last_send;
     a->last_send        = *ts;
     a->prev.analog      = a->measured.analog;
-    a->prev.digital     = a->measured.digital;
 
     prev_direction = a->direction;
-    a->direction = (3600 / (a->last_send - a->prev_ts)) * (digital - prev_digital); // how many digital steps per hour.
+    a->direction = (3600 / (a->last_send - a->prev_ts)) * (a->measured.digital - a->prev.digital); // how many digital steps per hour.
     a->angular_velocity = a->direction - prev_direction;
     Serial.print("----> ");
     Serial.print(a->name);
@@ -117,11 +114,46 @@ void AdInput::calc(void)
   _adList.iterForward(_adList.getHead(),_calc,&ts);
 }
 
+
+// find out the biggest anomaly from samples
+// and remove it from the calc
+int AdInput::_filter(struct ad *a)
+{
+  int i, avg, sum=0;
+  int candidateindex;
+  int diff,maxdiff=0;
+
+  for (i=0;i < AD_SAMPLECNT;i++)
+    sum += a->samples[i];
+  avg = sum / AD_SAMPLECNT;
+
+  for (i=0;i < AD_SAMPLECNT;i++) {
+    diff = a->samples[i]-avg;
+    if (diff > maxdiff) {
+      maxdiff=diff;
+      candidateindex=i;
+    }
+  }
+  Serial.print("---> ");
+  Serial.print(a->name);
+  Serial.print(" avg was ");
+  Serial.print(avg);
+  sum -= a->samples[candidateindex];
+  avg =  sum / (AD_SAMPLECNT -1);
+  Serial.print(" removed value ");
+  Serial.print(a->samples[candidateindex]);
+  Serial.print(". new avg is ");
+  Serial.println(avg);
+  return avg;
+}
+
+
 int AdInput::_verify(struct Node *n,void *data)
 {
   struct ad *a=(struct ad *) n;
   float digital;
 
+  a->measured.digital = _filter(a);
   digital = a->measured.digital;
   if ((abs(digital - a->prev.digital)) > a->diff.digital) {
     a->flags |= FLAGS_DATACHANGE;
@@ -153,7 +185,7 @@ int AdInput::_reset(struct Node *n,void *data)
   struct ad *a=(struct ad *) n;
   
   a->flags &= ~FLAGS_DATACHANGE;
-  a->measured.digital = 0;
+  a->sampleindex=0; // reset index
   return 0;
 }
 
