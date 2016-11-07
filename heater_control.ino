@@ -75,7 +75,7 @@ struct cnt cntArr[] = {                //prev prevsnd    diff   factor  scale  m
   {-1,"water",       0,0,0,0,irqh1,     0,0.0, 0,0.0,   0,0.1, 0,0.55, 50,1.0,  0,0.0}
 };
 
-conversion radiatorConverter(19);
+conversion radiatorConverter(18);
 
 struct condition conditions[]= {
   {0,NULL,&hs1, METHOD_HEATSTORE},               

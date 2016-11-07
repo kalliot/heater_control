@@ -85,7 +85,6 @@ int AdInput::_calc(struct Node *n,void *data)
   long prev_direction;
 
   if (a->flags & FLAGS_DATACHANGE) {
-    a->prev.digital = a->measured.digital;
     ddelta   = a->delta.digital;
     adelta   = a->delta.analog;
   
@@ -119,8 +118,9 @@ void AdInput::calc(void)
 // and remove it from the calc
 int AdInput::_filter(struct ad *a)
 {
-  int i, avg, sum=0;
-  int candidateindex;
+  int i, avg,newavg;
+  long sum=0,newsum=0;
+  int candidateindex=0;
   int diff,maxdiff=0;
 
   for (i=0;i < AD_SAMPLECNT;i++)
@@ -134,30 +134,24 @@ int AdInput::_filter(struct ad *a)
       candidateindex=i;
     }
   }
-  Serial.print("---> ");
-  Serial.print(a->name);
-  Serial.print(" avg was ");
-  Serial.print(avg);
-  sum -= a->samples[candidateindex];
-  avg =  sum / (AD_SAMPLECNT -1);
-  Serial.print(" removed value ");
-  Serial.print(a->samples[candidateindex]);
-  Serial.print(". new avg is ");
-  Serial.println(avg);
-  return avg;
+
+  newsum = sum - a->samples[candidateindex];
+  newavg =  newsum / (AD_SAMPLECNT -1);
+  return newavg;
 }
 
 
 int AdInput::_verify(struct Node *n,void *data)
 {
   struct ad *a=(struct ad *) n;
-  float digital;
+  int digital;
 
-  a->measured.digital = _filter(a);
-  digital = a->measured.digital;
-  if ((abs(digital - a->prev.digital)) > a->diff.digital) {
+  digital = _filter(a);
+  if ((abs(digital - a->measured.digital)) > a->diff.digital) {
     a->flags |= FLAGS_DATACHANGE;
     a->flags |= FLAGS_EVALUATE;
+    a->prev.digital =   a->measured.digital;
+    a->measured.digital = digital;
     _isChanged=true;
   }
   return 0;
