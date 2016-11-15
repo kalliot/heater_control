@@ -13,6 +13,14 @@ struct dig2a
   float analog;
 };
 
+struct average {
+  int samples;
+  int curr_cnt;
+  unsigned long sum;
+  int *buff;
+  int index;
+};
+
 struct ad {
   struct Node n;
   int port;
@@ -24,6 +32,7 @@ struct ad {
   int angular_velocity;
   int sampleindex;
   int samples[AD_SAMPLECNT];
+  struct average avg;
   struct dig2a prev;
   struct dig2a diff;
   struct dig2a mincal;
@@ -36,7 +45,7 @@ class AdInput {
  public:
   AdInput(int measTimeout);
   int add(int port,char *name,float diff,
-	  int mind,float minf,int maxd,float maxf);
+	  int mind,float minf,int maxd,float maxf,int average=0);
   int getCount(void);
   struct ad * getNamed(char *name);
   struct ad * getFirst();
@@ -56,6 +65,7 @@ class AdInput {
   static int _buildIot(struct Node *n,void *data);
   static int _timeout(struct Node *n,void *data);
   static int _filter(struct ad *a);
+  static int _smoothe(struct average *avg,int val);
  private:
   List _adList;
   int _samples;

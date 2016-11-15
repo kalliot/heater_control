@@ -116,7 +116,7 @@ void setup() {
   eepShow();
   iot.start();
   adinput.add(10,"boiler",       0.7, 94,  0.0,  1023, 80.0);
-  adinput.add(11,"ambient",      0.3, 574, 0.0,  1020, 33.0);
+  adinput.add(11,"ambient",      0.3, 574, 0.0,  1020, 33.0, 180);
   adinput.add(12,"hothousewater",0.7, 109, 20.7, 1011, 52.9);
   adinput.add(13,"radiator",     0.2, 247, 21.0, 800,  36.5);
 
@@ -129,10 +129,10 @@ void setup() {
 
   radiatorConverter.add(-30,32);
   radiatorConverter.add(-20,30);
-  radiatorConverter.add(-10,27);
+  radiatorConverter.add(-10,26);
   radiatorConverter.add(  0,20);
   radiatorConverter.add( 10,11);
-  radiatorConverter.add( 20, 2);
+  radiatorConverter.add( 20, 4);
   radiatorConverter.add( 30, 0);
   bp1.setConverter(&radiatorConverter);
   hs1.setIot(&iot);

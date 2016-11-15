@@ -1,6 +1,6 @@
 #include "heater_control.h"
 #include "AdInput.h"
-
+#include <string.h>
 
 int     AdInput::_currTimeout=0;
 boolean AdInput::_isTimeout=false;
@@ -13,7 +13,7 @@ AdInput::AdInput(int measTimeout)
 }
 
 int AdInput::add(int port,char *name,float diff,
-		 int mind,float minf,int maxd,float maxf)
+		 int mind,float minf,int maxd,float maxf,int average)
 {
   struct ad *a;
   int addr;
@@ -27,6 +27,17 @@ int AdInput::add(int port,char *name,float diff,
     Serial.println(addr);
     a->port            = port;
     a->name            = name;
+    a->avg.samples     = average;
+    if (average > 0) {
+      a->avg.buff = (int *) malloc(average * sizeof(int));
+      if (a->avg.buff == NULL)
+	a->avg.samples=0;
+      else {
+        a->avg.index = 0;
+        a->avg.curr_cnt=0;
+        a->avg.sum = 0;
+      }
+    }
     a->diff.analog     = diff;
     a->mincal.digital  = mind;
     a->mincal.analog   = minf;
@@ -34,6 +45,7 @@ int AdInput::add(int port,char *name,float diff,
     a->maxcal.analog   = maxf;
     a->measured.analog = -273;
     a->prev_ts         = ts;
+    a->prev.digital    = 0;
     a->delta.digital   = a->maxcal.digital - a->mincal.digital;
     a->delta.analog    = a->maxcal.analog - a->mincal.analog;
     a->n.ln_Name       = a->name;
@@ -63,6 +75,26 @@ struct ad * AdInput::getNext(struct ad *ad)
 int AdInput::getCount(void)
 {
   return _count;
+}
+
+int AdInput::_smoothe(struct average *avg,int val)
+{
+  int retval;
+
+  if (avg->samples==0)
+    return val;
+  if (avg->curr_cnt < avg->samples) { // still filling
+    avg->curr_cnt++;
+  }
+  else {
+    if (avg->index == avg->samples)
+      avg->index=0;
+    avg->sum-=avg->buff[avg->index];
+  }
+  avg->buff[avg->index]=val;
+  avg->sum+=val;
+  avg->index++;
+  return avg->sum / avg->curr_cnt;
 }
 
 int AdInput::_read(struct Node *n,void *data)
@@ -146,7 +178,7 @@ int AdInput::_verify(struct Node *n,void *data)
   struct ad *a=(struct ad *) n;
   int digital;
 
-  digital = _filter(a);
+  digital = _smoothe(&a->avg,_filter(a));
   if ((abs(digital - a->measured.digital)) > a->diff.digital) {
     a->flags |= FLAGS_DATACHANGE;
     a->flags |= FLAGS_EVALUATE;
