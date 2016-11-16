@@ -83,6 +83,9 @@ int AdInput::_smoothe(struct average *avg,int val)
 
   if (avg->samples==0)
     return val;
+  if (val==-1)
+    return  avg->sum / avg->curr_cnt;
+
   if (avg->curr_cnt < avg->samples) { // still filling
     avg->curr_cnt++;
   }
@@ -112,7 +115,6 @@ int AdInput::_calc(struct Node *n,void *data)
 {
   int ddelta;
   float adelta;
-  time_t *ts=(time_t *) data;
   struct ad *a=(struct ad *) n;
   long prev_direction;
 
@@ -121,8 +123,6 @@ int AdInput::_calc(struct Node *n,void *data)
     adelta   = a->delta.analog;
   
     a->measured.analog  = a->mincal.analog + (a->measured.digital - a->mincal.digital) * adelta / ddelta;
-    a->prev_ts          = a->last_send;
-    a->last_send        = *ts;
     a->prev.analog      = a->measured.analog;
 
     prev_direction = a->direction;
@@ -176,12 +176,15 @@ int AdInput::_filter(struct ad *a)
 int AdInput::_verify(struct Node *n,void *data)
 {
   struct ad *a=(struct ad *) n;
+  time_t *ts=(time_t *) data;
   int digital;
 
   digital = _smoothe(&a->avg,_filter(a));
   if ((abs(digital - a->measured.digital)) > a->diff.digital) {
     a->flags |= FLAGS_DATACHANGE;
     a->flags |= FLAGS_EVALUATE;
+    a->prev_ts          = a->last_send;
+    a->last_send        = *ts;
     a->prev.digital =   a->measured.digital;
     a->measured.digital = digital;
     _isChanged=true;
@@ -255,6 +258,17 @@ int AdInput::_timeout(struct Node *n,void *data)
   int elapsed= (*ts - a->last_send);
   
   if (elapsed > _currTimeout) {
+    Serial.print("timeout ");
+    Serial.print(a->name);
+    Serial.print(" elapsed seconds is ");
+    Serial.print(elapsed);
+    Serial.print(" currTimeout=");
+    Serial.println(_currTimeout);
+
+    a->prev.digital =   a->measured.digital;
+    a->measured.digital = _smoothe(&a->avg,-1);
+    a->prev_ts          = a->last_send;
+    a->last_send        = *ts;
     a->flags |= FLAGS_DATACHANGE;
     a->flags |= FLAGS_EVALUATE;
     _isTimeout=true;
