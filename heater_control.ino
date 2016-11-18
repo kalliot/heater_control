@@ -66,7 +66,7 @@ struct condition {
 Timer sched;
 adlimit adl1(38.0);
 bypassValve bp1;
-heatStore hs1(BOILER_LED,62,&adl1,67,4.0,30);
+heatStore hs1(BOILER_LED,60,&adl1,65,4.0,30);
 
 // counters are kept in array, this for preparing to have more of them.
 
@@ -116,7 +116,7 @@ void setup() {
   eepShow();
   iot.start();
   adinput.add(10,"boiler",       0.7, 94,  0.0,  1023, 80.0);
-  adinput.add(11,"ambient",      0.3, 574, 0.0,  1020, 33.0, 180);
+  adinput.add(11,"ambient",      0.3, 574, 0.0,  1020, 33.0, 360);
   adinput.add(12,"hothousewater",0.7, 109, 20.7, 1011, 52.9);
   adinput.add(13,"radiator",     0.2, 247, 21.0, 800,  36.5);
 
@@ -161,7 +161,6 @@ void setup() {
     }
     Serial.println();
   }
-  adinput.reset();
   ipserver.begin();
   Udp.begin(localPort);
   setSyncInterval(7200);
@@ -259,6 +258,7 @@ void processSensors()
     cntChanges=chkCntChanged();
     timeouts=adinput.isTimeout(ts, (cntTimeouts || cntChanges));
     changes=adinput.verify();
+
     // if there is something to send, advance other channel sends,
     // in case they are enough near with timeout. This way we get
     // more values to send in same m2x packet.
@@ -273,6 +273,7 @@ void processSensors()
     adinput.reset();
   }
 }
+
 
 void evaluateConditions(void)
 {
@@ -428,7 +429,6 @@ boolean chkCntTimeouts(time_t ts,boolean advance)
 boolean chkCntChanged()
 {
   float limit;
-  bool changed;
   float diff;
   boolean ret=false;
 

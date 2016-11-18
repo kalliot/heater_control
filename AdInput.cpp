@@ -50,6 +50,8 @@ int AdInput::add(int port,char *name,float diff,
     a->delta.analog    = a->maxcal.analog - a->mincal.analog;
     a->n.ln_Name       = a->name;
     a->diff.digital    = a->delta.digital / a->delta.analog * a->diff.analog;
+    a->flags &= ~FLAGS_DATACHANGE;
+    a->sampleindex=0; // reset index
     _adList.addtail((struct Node *)a);
     _count++;
     return 1;
@@ -222,6 +224,7 @@ void AdInput::reset(void)
 {
   _adList.iterForward(_adList.getHead(),_reset,NULL);
   _samples = 0;
+  _currTimeout = _measTimeout;
 }
 
 struct iotpar {
@@ -266,7 +269,7 @@ int AdInput::_timeout(struct Node *n,void *data)
     Serial.println(_currTimeout);
 
     a->prev.digital =   a->measured.digital;
-    a->measured.digital = _smoothe(&a->avg,-1);
+    a->measured.digital = _smoothe(&a->avg,_filter(a));
     a->prev_ts          = a->last_send;
     a->last_send        = *ts;
     a->flags |= FLAGS_DATACHANGE;
@@ -278,10 +281,9 @@ int AdInput::_timeout(struct Node *n,void *data)
 
 boolean AdInput::isTimeout(time_t ts,boolean advance)
 {
-  boolean ret=false;
-
   if (advance)
     _currTimeout = _measTimeout - 300;
+
   _isTimeout=false;
   _adList.iterForward(_adList.getHead(),_timeout,&ts);
   return _isTimeout;
